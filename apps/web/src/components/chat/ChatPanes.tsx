@@ -30,6 +30,7 @@ import {
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { cn } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import ChatView from "../ChatView";
 import { Button } from "../ui/button";
@@ -65,18 +66,27 @@ function DropHighlight({ paneId, edge = false }: { paneId: ChatPaneId; edge?: bo
   );
 }
 
-/** Marks a thread shown on its own as a drop target, so a drop starts a layout. */
+/**
+ * Marks a thread shown on its own as a drop target, so a drop starts a layout.
+ * Drafts and narrow windows render it disabled rather than not at all: the
+ * same parent element keeps ChatView mounted across a draft's promotion.
+ */
 export function ChatPaneDropArea({
   paneId,
+  enabled,
   children,
 }: {
   paneId: ChatPaneId;
+  enabled: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-chat-pane-drop={paneId}>
+    <div
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+      data-chat-pane-drop={enabled ? paneId : undefined}
+    >
       {children}
-      <DropHighlight paneId={paneId} />
+      {enabled ? <DropHighlight paneId={paneId} /> : null}
     </div>
   );
 }
@@ -113,25 +123,41 @@ export function ChatPanes({
       data-chat-panes-root={root.id}
     >
       <div className="flex flex-1" style={minSize(root)}>
-        <PaneNode node={root} routeThreadKey={routeThreadKey} routeThreadRef={routeThreadRef} />
+        <PaneNode
+          node={root}
+          edges={WINDOW_TOP_EDGES}
+          routeThreadKey={routeThreadKey}
+          routeThreadRef={routeThreadRef}
+        />
       </div>
       <DropHighlight paneId={root.id} edge />
     </div>
   );
 }
 
+/** Which window edges a node touches, for the title bar insets only the corner panes need. */
+interface PaneEdges {
+  readonly top: boolean;
+  readonly left: boolean;
+  readonly right: boolean;
+}
+
+const WINDOW_TOP_EDGES: PaneEdges = { top: true, left: true, right: true };
+
 interface PaneNodeProps {
   node: ChatPaneNode;
+  edges: PaneEdges;
   routeThreadKey: string;
   routeThreadRef: ScopedThreadRef;
 }
 
-function PaneNode({ node, routeThreadKey, routeThreadRef }: PaneNodeProps) {
+function PaneNode({ node, edges, routeThreadKey, routeThreadRef }: PaneNodeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   if (node.kind === "leaf") {
     return (
       <PaneLeaf
         leaf={node}
+        edges={edges}
         focused={scopedThreadKey(node.threadRef) === routeThreadKey}
         routeThreadRef={routeThreadRef}
       />
@@ -139,33 +165,37 @@ function PaneNode({ node, routeThreadKey, routeThreadRef }: PaneNodeProps) {
   }
   const horizontal = node.direction === "horizontal";
   const splitId = node.id;
+  const firstEdges = horizontal ? { ...edges, right: false } : edges;
+  const secondEdges = horizontal ? { ...edges, left: false } : { ...edges, top: false };
   return (
     <div
       ref={containerRef}
       className={cn("flex min-h-0 min-w-0 flex-1", horizontal ? "flex-row" : "flex-col")}
       style={{ "--pane-ratio": node.ratio } as CSSProperties}
     >
-      <div
-        className="flex flex-col"
-        style={{ flex: "var(--pane-ratio) 1 0px", ...minSize(node.first) }}
-      >
+      <div className="flex flex-[var(--pane-ratio)_1_0px] flex-col" style={minSize(node.first)}>
         <PaneNode
+          key={node.first.id}
           node={node.first}
+          edges={firstEdges}
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
         />
       </div>
       <ResizeHandle
         direction={node.direction}
+        ratio={node.ratio}
         containerRef={containerRef}
         onCommit={(ratio) => useChatPanesStore.getState().setRatio(splitId, ratio)}
       />
       <div
-        className="flex flex-col"
-        style={{ flex: "calc(1 - var(--pane-ratio)) 1 0px", ...minSize(node.second) }}
+        className="flex flex-[calc(1-var(--pane-ratio))_1_0px] flex-col"
+        style={minSize(node.second)}
       >
         <PaneNode
+          key={node.second.id}
           node={node.second}
+          edges={secondEdges}
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
         />
@@ -210,10 +240,12 @@ const DRAG_DISTANCE = 6;
 
 const PaneLeaf = memo(function PaneLeaf({
   leaf,
+  edges,
   focused,
   routeThreadRef,
 }: {
   leaf: ChatPaneLeaf;
+  edges: PaneEdges;
   focused: boolean;
   routeThreadRef: ScopedThreadRef;
 }) {
@@ -223,10 +255,11 @@ const PaneLeaf = memo(function PaneLeaf({
   const deleted = shell?.deletedAt != null;
   const close = useStableCallback(() => follow(closePane(leaf.id, routeThreadRef), true));
 
-  // A thread deleted elsewhere takes its pane with it.
+  // A background thread deleted elsewhere takes its pane with it. The route
+  // thread's pane is closed by ThreadRouteView, which also picks where to go.
   useEffect(() => {
-    if (deleted) close();
-  }, [close, deleted]);
+    if (deleted && !focused) close();
+  }, [close, deleted, focused]);
 
   const cancelDragRef = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelDragRef.current?.(), []);
@@ -270,7 +303,11 @@ const PaneLeaf = memo(function PaneLeaf({
       endChatPaneDrag();
     };
     const onKey = (key: KeyboardEvent) => {
-      if (key.key === "Escape") onCancel();
+      if (key.key !== "Escape" || !dragging) return;
+      // The Escape belongs to the drag, not to whatever the focused view would close.
+      key.preventDefault();
+      key.stopPropagation();
+      onCancel();
     };
     // Capture keeps moves coming once the pointer leaves the header or crosses embedded browsers.
     capturePointer(header, pointerId);
@@ -300,6 +337,10 @@ const PaneLeaf = memo(function PaneLeaf({
       <div
         className={cn(
           "flex h-7 shrink-0 cursor-grab items-center gap-1.5 border-b px-2 text-xs select-none active:cursor-grabbing [-webkit-app-region:no-drag]",
+          // Only the panes in the window's top corners sit under the traffic
+          // lights or the native window controls.
+          edges.top && edges.left && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          edges.top && edges.right && "wco:pr-(--workspace-native-controls-inset)",
           focused
             ? "border-b-primary/60 bg-primary/[0.06] text-foreground"
             : "border-b-border/70 text-muted-foreground",
@@ -308,7 +349,9 @@ const PaneLeaf = memo(function PaneLeaf({
         onPointerDown={onHeaderPointerDown}
       >
         <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+        <span className="min-w-0 truncate font-medium">{title}</span>
+        {/* The gap after the title still moves the window, as the title bar it replaces did. */}
+        <span aria-hidden className={cn("h-full min-w-4 flex-1", edges.top && "drag-region")} />
         <Button
           variant="ghost"
           size="icon-micro"
@@ -343,12 +386,16 @@ const PaneLeaf = memo(function PaneLeaf({
  * container's CSS variable and is committed on release, so a drag never
  * re-renders the chat views on either side per frame.
  */
+const KEYBOARD_RATIO_STEP = 0.05;
+
 function ResizeHandle({
   direction,
+  ratio,
   containerRef,
   onCommit,
 }: {
   direction: SplitDirection;
+  ratio: number;
   containerRef: React.RefObject<HTMLDivElement | null>;
   onCommit: (ratio: number) => void;
 }) {
@@ -364,23 +411,52 @@ function ResizeHandle({
     );
   };
   const end = (event: ReactPointerEvent<HTMLElement>) => {
-    const ratio = ratioRef.current;
-    if (ratio === null) return;
+    const dragged = ratioRef.current;
+    if (dragged === null) return;
     ratioRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     document.body.style.removeProperty("cursor");
     document.body.style.removeProperty("user-select");
-    onCommit(ratio);
+    onCommit(dragged);
   };
+  // An unmount mid-drag never sees the release, so the body styles go with it.
+  useEffect(
+    () => () => {
+      if (ratioRef.current === null) return;
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    },
+    [],
+  );
+  const decrease = horizontal ? "ArrowLeft" : "ArrowUp";
+  const increase = horizontal ? "ArrowRight" : "ArrowDown";
   return (
     <div
       role="separator"
       aria-orientation={horizontal ? "vertical" : "horizontal"}
       data-chat-pane-resize
+      aria-label="Resize panes"
+      aria-valuemin={15}
+      aria-valuemax={85}
+      aria-valuenow={Math.round(ratio * 100)}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const step =
+          event.key === decrease
+            ? -KEYBOARD_RATIO_STEP
+            : event.key === increase
+              ? KEYBOARD_RATIO_STEP
+              : 0;
+        const next =
+          event.key === "Home" ? 0 : event.key === "End" ? 1 : step !== 0 ? ratio + step : null;
+        if (next === null) return;
+        event.preventDefault();
+        onCommit(clampPaneRatio(next));
+      }}
       className={cn(
-        "group relative z-20 shrink-0 bg-border select-none",
+        "group relative z-20 shrink-0 bg-border outline-none select-none focus-visible:bg-primary",
         horizontal ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
       )}
       onPointerDown={(event) => {
@@ -400,6 +476,7 @@ function ResizeHandle({
       }}
       onPointerUp={end}
       onPointerCancel={end}
+      onLostPointerCapture={end}
     >
       <span
         aria-hidden
