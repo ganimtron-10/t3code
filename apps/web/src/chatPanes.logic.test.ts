@@ -6,6 +6,7 @@ import {
   equalizePanes,
   findLeafByThread,
   findNode,
+  isRestorableLayout,
   movePane,
   removePane,
   resolveDropZone,
@@ -103,6 +104,17 @@ describe("chat pane tree", () => {
     expect(even).toMatchObject({ id: "s3", ratio: 2 / 3, first: { id: "s1", ratio: 0.5 } });
     expect(findNode(even, "s2")).toMatchObject({ ratio: 0.5 });
     expect(equalizePanes(even)).toBe(even);
+  });
+
+  it("rejects saved layouts that repeat a pane or thread, or hold too many panes", () => {
+    const layout = splitPane(leaf("a"), "a", "right", leaf("b"), "s1");
+    expect(isRestorableLayout(layout)).toBe(true);
+    expect(isRestorableLayout(splitPane(leaf("a"), "a", "right", leaf("a"), "s1"))).toBe(false);
+    expect(isRestorableLayout({ ...layout, id: "a" })).toBe(false);
+    let deep: ChatPaneNode = leaf("t0");
+    for (let i = 1; i <= 2000; i++)
+      deep = splitPane(deep, deep.id, "right", leaf(`t${i}`), `s${i}`);
+    expect(isRestorableLayout(deep)).toBe(false);
   });
 
   it("finds the pane showing a thread", () => {

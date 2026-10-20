@@ -10,6 +10,7 @@ import {
   equalizePanes,
   findLeafByThread,
   findNode,
+  isRestorableLayout,
   movePane,
   removePane,
   resolveDropZone,
@@ -99,7 +100,10 @@ export const useChatPanesStore = create<ChatPanesState>()(
       merge: (persisted, current) => {
         try {
           const { root } = decodePersisted(persisted);
-          return { ...current, root: root?.kind === "split" ? clampRatios(root) : null };
+          return {
+            ...current,
+            root: root?.kind === "split" && isRestorableLayout(root) ? clampRatios(root) : null,
+          };
         } catch {
           return current;
         }
