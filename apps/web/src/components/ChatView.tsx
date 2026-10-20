@@ -989,7 +989,10 @@ export default function ChatView(props: ChatViewProps) {
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
   );
-  const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  // A pane resizes through its split gutter; maximizing would hide the chat
+  // column that holds the only control to restore it.
+  const canMaximizeRightPanel =
+    rightPanelOpen && !shouldUsePlanSidebarSheet && paneMode === undefined;
   const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const [threadPanelPresentation, setThreadPanelPresentation] =
@@ -2092,14 +2095,15 @@ export default function ChatView(props: ChatViewProps) {
   });
 
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen || !inputOwnerRef.current) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen || !inputOwner) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposerStable();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposerStable, terminalUiState.terminalOpen]);
+    // A pane that becomes the input owner takes the caret, as a thread switch does.
+  }, [activeThread?.id, focusComposerStable, inputOwner, terminalUiState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
@@ -2686,7 +2690,7 @@ export default function ChatView(props: ChatViewProps) {
 
     if (!previous && current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
-      setTerminalFocusRequestId((value) => value + 1);
+      if (inputOwnerRef.current) setTerminalFocusRequestId((value) => value + 1);
       return;
     } else if (previous && !current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
@@ -3164,7 +3168,7 @@ export default function ChatView(props: ChatViewProps) {
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
   const panelLayoutControls = (
     <WorkspaceTitlebarControls
-      showMaximizeControl={!shouldUsePlanSidebarSheet}
+      showMaximizeControl={!shouldUsePlanSidebarSheet && paneMode === undefined}
       rightPanelOpen={rightPanelOpen}
       animationsActive={panelAnimationsActive}
       maximized={rightPanelMaximized}
@@ -3213,7 +3217,8 @@ export default function ChatView(props: ChatViewProps) {
                     "wco:pr-(--workspace-native-controls-inset)",
                 )
               : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            // A pane's own header sits at the window edge instead and takes these insets.
+            paneMode === undefined && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
           {isElectron && rightPanelControlsAtRoot ? (

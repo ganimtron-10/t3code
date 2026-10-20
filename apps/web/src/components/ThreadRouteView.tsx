@@ -14,7 +14,12 @@ import {
   useBackgroundDraftSubmissionPending,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { SOLO_PANE_ID, selectRouteLayout, useChatPanesStore } from "../chatPanesStore";
+import {
+  SOLO_PANE_ID,
+  closeRouteThreadPane,
+  selectRouteLayout,
+  useChatPanesStore,
+} from "../chatPanesStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useEnvironmentThreadRefs, useThreadRefs, useQuietThreadShell } from "../state/entities";
@@ -159,7 +164,14 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     if (renderState === "missing") {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
-      if (environmentHasAnyThreads) {
+      const survivor = closeRouteThreadPane(target.threadRef);
+      if (survivor) {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(survivor),
+          replace: true,
+        });
+      } else if (environmentHasAnyThreads) {
         void navigate({ to: "/", replace: true });
       }
     }
@@ -176,28 +188,31 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   if (target.kind === "draft") {
     if (draftSession) {
       view = (
-        <ChatView
-          key={target.draftId}
-          draftId={target.draftId}
-          environmentId={draftSession.environmentId}
-          threadId={draftSession.threadId}
-          routeKind="draft"
-          forceExpandedMobileComposer
-        />
+        <ChatPaneDropArea paneId={SOLO_PANE_ID} enabled={false}>
+          <ChatView
+            key={target.draftId}
+            draftId={target.draftId}
+            environmentId={draftSession.environmentId}
+            threadId={draftSession.threadId}
+            routeKind="draft"
+            forceExpandedMobileComposer
+          />
+        </ChatPaneDropArea>
       );
     }
   } else if (paneLayout) {
     view = <ChatPanes root={paneLayout} routeThreadRef={target.threadRef} />;
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
-      <ChatView
-        key={nextChatViewKey?.key}
-        environmentId={target.threadRef.environmentId}
-        threadId={target.threadRef.threadId}
-        routeKind="server"
-      />
+      <ChatPaneDropArea paneId={SOLO_PANE_ID} enabled={!isMobileViewport}>
+        <ChatView
+          key={nextChatViewKey?.key}
+          environmentId={target.threadRef.environmentId}
+          threadId={target.threadRef.threadId}
+          routeKind="server"
+        />
+      </ChatPaneDropArea>
     );
-    if (!isMobileViewport) view = <ChatPaneDropArea paneId={SOLO_PANE_ID}>{view}</ChatPaneDropArea>;
   }
 
   return (
