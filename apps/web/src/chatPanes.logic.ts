@@ -115,6 +115,33 @@ export function setPaneRatio(root: ChatPaneNode, splitId: ChatPaneId, ratio: num
   return first === root.first && second === root.second ? root : { ...root, first, second };
 }
 
+/** More panes than this can't be usable, so a saved layout beyond it is tampered or corrupt. */
+const MAX_RESTORED_PANES = 32;
+
+/**
+ * Whether a decoded layout is safe to render: a bounded number of panes, and
+ * no node id or thread used twice. Walks iteratively so a hostile depth can't
+ * overflow the stack before it is rejected.
+ */
+export function isRestorableLayout(root: ChatPaneNode): boolean {
+  const ids = new Set<ChatPaneId>();
+  const threads = new Set<string>();
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (ids.has(node.id)) return false;
+    ids.add(node.id);
+    if (node.kind === "split") {
+      stack.push(node.first, node.second);
+      continue;
+    }
+    const key = scopedThreadKey(node.threadRef);
+    if (threads.has(key) || threads.size >= MAX_RESTORED_PANES) return false;
+    threads.add(key);
+  }
+  return true;
+}
+
 /** How many panes sit side by side along `direction`'s axis inside `node`. */
 function paneSpan(node: ChatPaneNode, direction: SplitDirection): number {
   if (node.kind === "leaf") return 1;
