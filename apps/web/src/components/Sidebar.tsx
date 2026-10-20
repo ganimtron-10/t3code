@@ -5,6 +5,15 @@ import { CollapsibleSectionHeader } from "./ui/collapsible-section-header";
 import { ThreadTerminalStatusButton } from "./ThreadStatusIndicators";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
+  canOpenThreadInSplit,
+  commitChatPaneDrop,
+  openThreadInSplit,
+  endChatPaneDrag,
+  hoverChatPaneDrop,
+  startChatPaneDrag,
+  useChatPanesStore,
+} from "../chatPanesStore";
+import {
   dropThreadContext,
   endThreadContextDrag,
   moveThreadContextDrag as moveThreadContextDragGhost,
@@ -3347,6 +3356,7 @@ export default function Sidebar() {
     dragSensorRef.current = null;
     contextDragKeyRef.current = null;
     endThreadContextDrag();
+    endChatPaneDrag();
     if (started) {
       listMotionRef.current?.release();
       setDragState(null);
@@ -3381,17 +3391,27 @@ export default function Sidebar() {
     );
     if (!contextDrag) {
       endThreadContextDrag();
+      hoverChatPaneDrop(null);
       return false;
     }
     const threads = contextDragThreads();
     const title =
       threadByKeyRef.current.get(contextDragKeyRef.current ?? "")?.title.trim() || "Thread";
-    moveThreadContextDragGhost(point, { title, count: threads.length });
+    const overComposer = moveThreadContextDragGhost(point, { title, count: threads.length });
+    // Outside a composer, the dragged thread can open as a split pane instead.
+    const paneThread = parseScopedThreadKey(contextDragKeyRef.current ?? "");
+    if (paneThread && useChatPanesStore.getState().drag === null) {
+      startChatPaneDrag(paneThread, null);
+    }
+    hoverChatPaneDrop(overComposer ? null : point);
     return true;
   };
   const dropThreadContextDrag = (point: { x: number; y: number }) => {
     if (!pointerOutsideThreadList(point)) return false;
-    dropThreadContext(point, contextDragThreads());
+    if (!dropThreadContext(point, contextDragThreads())) {
+      const opened = commitChatPaneDrop(parseScopedThreadKey(routeThreadKeyRef.current ?? ""));
+      if (opened) void navigateToThread(opened);
+    }
     return true;
   };
   // useSensor memoizes on the options object; a fresh one each render rebuilds
@@ -4246,6 +4266,10 @@ export default function Sidebar() {
                 threadRef.environmentId,
                 AuthOrchestrationOperateScope,
               ),
+              canOpenInSplit: canOpenThreadInSplit(
+                parseScopedThreadKey(routeThreadKeyRef.current ?? ""),
+                threadRef,
+              ),
               branch: thread.branch ?? null,
               projectFilter: threadProjectGroup
                 ? {
@@ -4283,6 +4307,10 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "open-in-split":
+            if (openThreadInSplit(parseScopedThreadKey(routeThreadKeyRef.current ?? ""), threadRef))
+              void navigateToThread(threadRef);
+            return;
           case "filter-by-project":
             if (threadProjectGroup) {
               setProjectScopeKey(

@@ -69,10 +69,11 @@ function findDropTarget(point: { x: number; y: number }): HTMLElement | null {
   );
 }
 
+/** Returns whether the pointer is over a context drop target. */
 export function moveThreadContextDrag(
   point: { x: number; y: number },
   label: { title: string; count: number },
-) {
+): boolean {
   const target = findDropTarget(point);
   if (target !== overTarget) {
     overTarget?.removeAttribute(DROP_OVER_ATTRIBUTE);
@@ -80,6 +81,7 @@ export function moveThreadContextDrag(
     overTarget = target;
   }
   setGhost({ x: point.x, y: point.y, ...label });
+  return target !== null;
 }
 
 export function endThreadContextDrag() {
