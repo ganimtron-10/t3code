@@ -350,6 +350,7 @@ import {
 import { resizeSnapShotSource } from "../../lib/snapShotSource";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
+import { isInBackgroundChatPane } from "~/lib/chatPaneFocus";
 import {
   getComposerPromptLengthValidationMessage,
   getComposerSubmissionValidationMessage,
@@ -5354,6 +5355,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         },
       });
       if (command !== "composer.stash") return;
+      // Every pane's composer listens on window; only the focused pane's stashes.
+      if (isInBackgroundChatPane(composerFormRef.current)) return;
       // Always claim the shortcut so the browser save dialog never opens,
       // even when the composer is in a state that can't stash.
       event.preventDefault();

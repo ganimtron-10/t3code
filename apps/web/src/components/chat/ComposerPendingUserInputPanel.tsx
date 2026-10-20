@@ -10,6 +10,7 @@ import { CheckIcon } from "lucide-react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
+import { isInBackgroundChatPane } from "~/lib/chatPaneFocus";
 import ChatMarkdown from "../ChatMarkdown";
 
 interface PendingUserInputPanelProps {
@@ -85,6 +86,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   const canRespond = prompt.responseCapability !== "not_resumable";
   const responseDisabled = disabled || isResponding || !canRespond;
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
   // The auto-advance timer fires after the render that armed it.
   const advance = useStableCallback(onAdvance);
   const [optimisticSingleSelect, setOptimisticSingleSelect] = useState<{
@@ -172,6 +174,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     if (!activeQuestion || responseDisabled || isCollapsed) return;
     const handler = (event: globalThis.KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isInBackgroundChatPane(toggleRef.current)) return;
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
         return;
@@ -207,6 +210,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
       }}
     >
       <CollapsibleTrigger
+        ref={toggleRef}
         render={<ComposerBanner.Row render={<button type="button" />} />}
         title={
           isCollapsed ? "Show the question and its options" : "Hide the question and its options"
