@@ -160,6 +160,8 @@ interface TimelineFollowInput {
   readonly timelineEntries: ReadonlyArray<TimelineEntry>;
   readonly timelineAnchorMessageId: MessageId | null;
   readonly setTimelineAnchor: Dispatch<SetStateAction<TimelineAnchor>>;
+  /** False while this view is a background split pane; keys aimed at the page belong to the focused one. */
+  readonly inputOwnerRef: { readonly current: boolean };
 }
 
 /**
@@ -183,6 +185,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     timelineEntries,
     timelineAnchorMessageId,
     setTimelineAnchor,
+    inputOwnerRef,
   } = input;
   const [visitState, setVisit] = useState<TimelineFollowVisit>({
     threadKey: activeThreadKey,
@@ -366,6 +369,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   }, [composerTimelineInset, readCurrentFollow, scrollToEndStable]);
 
   const handleNavigation = (navigation: TimelineNavigation) => {
+    if (navigation.source === "key" && navigation.fromPage && !inputOwnerRef.current) return;
     const composer = composerRef.current;
     const awayFromEnd = () => resolveTimelineIsAtEnd(legendListRef.current?.getState()) === false;
     const releases = navigationReleasesFollow(navigation, {

@@ -392,6 +392,12 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       routeKind: "server";
       draftId?: never;
+      /**
+       * Set when this view is one pane of a split layout. Only the focused
+       * pane owns window-level input; a background pane still renders and
+       * streams but never takes shortcuts, pastes or focus.
+       */
+      paneMode?: "focused" | "background";
     }
   | {
       environmentId: EnvironmentId;
@@ -401,6 +407,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       routeKind: "draft";
       draftId: DraftId;
+      paneMode?: never;
     };
 
 const EMPTY_HELD_TURN_DIFF_SUMMARIES: readonly never[] = [];
@@ -416,7 +423,14 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    paneMode,
   } = props;
+  const inputOwner = paneMode !== "background";
+  // Window listeners read this instead of resubscribing when focus moves between panes.
+  const inputOwnerRef = useRef(inputOwner);
+  useLayoutEffect(() => {
+    inputOwnerRef.current = inputOwner;
+  }, [inputOwner]);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -994,7 +1008,8 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelPresent = rightPanelPresence.present;
   const rightPanelControlsInPanel =
     shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
+  const rightPanelControlsAtRoot =
+    rightPanelPresent && !shouldUsePlanSidebarSheet && paneMode === undefined;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -1766,7 +1781,13 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const onInterruptStable = useStableCallback(onInterrupt);
-  useEffect(() => subscribeSnapShotComposerFocus(focusComposerStable), [focusComposerStable]);
+  useEffect(
+    () =>
+      subscribeSnapShotComposerFocus(() => {
+        if (inputOwnerRef.current) focusComposerStable();
+      }),
+    [focusComposerStable],
+  );
   const scheduleComposerFocus = () => {
     window.requestAnimationFrame(() => {
       focusComposer();
@@ -2024,10 +2045,11 @@ export default function ChatView(props: ChatViewProps) {
     timelineEntries,
     timelineAnchorMessageId,
     setTimelineAnchor,
+    inputOwnerRef,
   });
 
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen || !inputOwnerRef.current) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposerStable();
     });
@@ -2046,6 +2068,7 @@ export default function ChatView(props: ChatViewProps) {
         frame = window.requestAnimationFrame(() => {
           frame = null;
           if (document.querySelector("[data-mcp-app-fullscreen]") !== null) return;
+          if (!inputOwnerRef.current) return;
           if (shouldRefocusComposerOnWindowFocus(document.activeElement)) focusComposerStable();
         });
       });
@@ -2320,6 +2343,7 @@ export default function ChatView(props: ChatViewProps) {
     explicitDiffOpenRef,
     onDiffPanelOpen,
     closeRightPanelSurface,
+    inputOwnerRef,
   });
   const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
   const nowMinute = useNowMinute();
@@ -2568,7 +2592,7 @@ export default function ChatView(props: ChatViewProps) {
   const isThreadFindActive = useThreadFindOpen(activeThreadRef, threadFindEnabled);
 
   useChatShortcuts({
-    enabled: activeThreadId !== null && !backgroundThread,
+    enabled: activeThreadId !== null && !backgroundThread && inputOwner,
     keybindings,
     scriptKeybindings,
     getShortcutContext,
@@ -2623,12 +2647,13 @@ export default function ChatView(props: ChatViewProps) {
   // A focused desktop browser page forwards these chords as menu actions.
   useEffect(() => {
     return window.desktopBridge?.onMenuAction((action) => {
+      if (!inputOwnerRef.current) return;
       if (action === "rightPanel.toggle") toggleRightPanelStable();
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
     });
   }, [toggleRightPanelStable, toggleRightPanelMaximizedStable]);
 
-  usePasteToFocusComposer(activeThreadId, composerRef);
+  usePasteToFocusComposer(activeThreadId, composerRef, inputOwnerRef);
   const {
     onConfirmRevertStable,
     onForkFromRunStable,
@@ -3107,6 +3132,7 @@ export default function ChatView(props: ChatViewProps) {
       animationsActive={panelAnimationsActive}
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
+      inPane={paneMode !== undefined}
     >
       {panelToggleControls}
     </WorkspaceTitlebarControls>
@@ -3143,7 +3169,8 @@ export default function ChatView(props: ChatViewProps) {
             "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
             isElectron
               ? cn(
-                  "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
+                  paneMode === undefined && "drag-region",
+                  "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
                   reserveTitleBarControlInset &&
                     !inlineRightPanelOwnsTitleBar &&
                     "wco:pr-(--workspace-native-controls-inset)",

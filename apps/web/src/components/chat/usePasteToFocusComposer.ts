@@ -14,6 +14,8 @@ import type { ComposerHandleRef } from "../../composerHandleContext";
 export function usePasteToFocusComposer(
   activeThreadId: ThreadId | null,
   composerRef: ComposerHandleRef,
+  /** False while this view is a background split pane, which leaves pastes to the focused one. */
+  inputOwnerRef: { readonly current: boolean },
 ) {
   const pasteAsTextShortcutUntilRef = useRef(0);
   useEffect(() => {
@@ -26,7 +28,7 @@ export function usePasteToFocusComposer(
       }
     };
     const handler = (event: ClipboardEvent) => {
-      if (!activeThreadId || isCommandPaletteOpen()) return;
+      if (!activeThreadId || !inputOwnerRef.current || isCommandPaletteOpen()) return;
       if (getTerminalFocusOwner() !== null) return;
       if (composerRef.current?.isModelPickerOpen()) return;
       const text = pasteTextToFocusComposer(event);
