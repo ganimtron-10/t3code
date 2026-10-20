@@ -7,6 +7,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import {
   clampPaneRatio,
   collectLeaves,
+  equalizePanes,
   findLeafByThread,
   findNode,
   movePane,
@@ -49,6 +50,7 @@ interface ChatPanesState {
   root: ChatPaneNode | null;
   drag: ChatPaneDrag | null;
   setRatio: (splitId: ChatPaneId, ratio: number) => void;
+  equalize: () => void;
 }
 
 const NodeSchema: Schema.Codec<ChatPaneNode> = Schema.Union([
@@ -79,6 +81,12 @@ export const useChatPanesStore = create<ChatPanesState>()(
         set((state) => {
           if (!state.root) return state;
           const root = setPaneRatio(state.root, splitId, ratio);
+          return root === state.root ? state : { root };
+        }),
+      equalize: () =>
+        set((state) => {
+          if (!state.root) return state;
+          const root = equalizePanes(state.root);
           return root === state.root ? state : { root };
         }),
     }),
