@@ -133,6 +133,15 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+## Show threads side by side
+
+Drag a thread from the sidebar onto the chat area to open it beside the one you are reading. Drop near a pane's left, right, top, or bottom edge to split it there, or on the outer edge of the chat area to span the whole layout. **Open in split view** in a thread's menu does the same and places it on the right.
+
+- Drag a pane's header to move it, and drag the line between panes (or focus it and use the arrow keys) to resize.
+- Clicking a pane makes its thread the current one; only that pane takes keyboard shortcuts and pastes.
+- Close a pane with the × in its header. Opening a thread that is not in the layout shows it on its own, and opening one that is brings the layout back.
+- The layout is remembered per browser. Narrow windows always show a single thread.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list
