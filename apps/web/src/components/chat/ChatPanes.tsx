@@ -477,6 +477,7 @@ function ResizeHandle({
       onPointerUp={end}
       onPointerCancel={end}
       onLostPointerCapture={end}
+      onDoubleClick={() => useChatPanesStore.getState().equalize()}
     >
       <span
         aria-hidden
