@@ -115,6 +115,26 @@ export function setPaneRatio(root: ChatPaneNode, splitId: ChatPaneId, ratio: num
   return first === root.first && second === root.second ? root : { ...root, first, second };
 }
 
+/** How many panes sit side by side along `direction`'s axis inside `node`. */
+function paneSpan(node: ChatPaneNode, direction: SplitDirection): number {
+  if (node.kind === "leaf") return 1;
+  const first = paneSpan(node.first, direction);
+  const second = paneSpan(node.second, direction);
+  return node.direction === direction ? first + second : Math.max(first, second);
+}
+
+/** Sizes every split so the panes along each axis get equal space. */
+export function equalizePanes(root: ChatPaneNode): ChatPaneNode {
+  if (root.kind === "leaf") return root;
+  const firstSpan = paneSpan(root.first, root.direction);
+  const ratio = clampPaneRatio(firstSpan / (firstSpan + paneSpan(root.second, root.direction)));
+  const first = equalizePanes(root.first);
+  const second = equalizePanes(root.second);
+  return ratio === root.ratio && first === root.first && second === root.second
+    ? root
+    : { ...root, ratio, first, second };
+}
+
 /** Moves pane `paneId` beside `targetId`. A drop on itself, or on a vanished target, is a no-op. */
 export function movePane(
   root: ChatPaneNode,

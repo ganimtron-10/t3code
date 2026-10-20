@@ -3,7 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   collectLeaves,
+  equalizePanes,
   findLeafByThread,
+  findNode,
   movePane,
   removePane,
   resolveDropZone,
@@ -79,6 +81,28 @@ describe("chat pane tree", () => {
     const layout = splitPane(leaf("a"), "a", "right", leaf("b"), "s1");
     expect(setPaneRatio(layout, "s1", 0.5)).toBe(layout);
     expect(setPaneRatio(layout, "s1", 2)).toMatchObject({ ratio: 0.85 });
+  });
+
+  it("gives every pane along an axis the same share", () => {
+    // a | (b / c) | d: three columns, with b and c stacked in the middle one.
+    const layout = splitPane(
+      splitPane(
+        splitPane(leaf("a"), "a", "right", leaf("b"), "s1"),
+        "b",
+        "bottom",
+        leaf("c"),
+        "s2",
+      ),
+      "s1",
+      "right",
+      leaf("d"),
+      "s3",
+    );
+    const skewed = setPaneRatio(setPaneRatio(layout, "s1", 0.8), "s2", 0.2);
+    const even = equalizePanes(skewed);
+    expect(even).toMatchObject({ id: "s3", ratio: 2 / 3, first: { id: "s1", ratio: 0.5 } });
+    expect(findNode(even, "s2")).toMatchObject({ ratio: 0.5 });
+    expect(equalizePanes(even)).toBe(even);
   });
 
   it("finds the pane showing a thread", () => {
