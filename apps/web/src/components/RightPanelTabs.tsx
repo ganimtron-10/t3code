@@ -92,6 +92,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
+import { isInBackgroundChatPane } from "~/lib/chatPaneFocus";
 
 export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -312,6 +313,12 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
+  const launcherRef = useRef<HTMLDivElement | null>(null);
+  // Created once so React attaches it on mount only; a background pane's launcher never takes focus.
+  const [attachLauncher] = useState(() => (node: HTMLDivElement | null) => {
+    launcherRef.current = node;
+    if (node && !isInBackgroundChatPane(node)) node.focus();
+  });
 
   const actions = [
     {
@@ -383,6 +390,7 @@ function RightPanelEmptyState(props: {
     const action = surfaceShortcutActionForKey(availableActions, event);
     if (!action) return;
     if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
+    if (isInBackgroundChatPane(launcherRef.current)) return;
     const target = event.composedPath()[0] ?? event.target;
     if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
     event.preventDefault();
@@ -435,7 +443,7 @@ function RightPanelEmptyState(props: {
 
   return (
     <div
-      ref={focusOnMount}
+      ref={attachLauncher}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="Open a surface"
@@ -747,10 +755,6 @@ function PullRequestSurfaceIcon({
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
-function focusOnMount(node: HTMLDivElement | null) {
-  node?.focus();
-}
-
 function SortableTabList(props: {
   surfaces: readonly RightPanelSurface[];
   onMove: ((surfaceId: string, toIndex: number) => void) | undefined;
@@ -961,6 +965,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const onNewSurfaceKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing) return;
+    if (isInBackgroundChatPane(tabListRef.current)) return;
     if (
       resolveShortcutCommand(event, props.keybindings, {
         context: { ...props.getShortcutContext(), rightPanelOpen: true },

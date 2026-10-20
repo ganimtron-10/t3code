@@ -1551,11 +1551,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       threadByKeyRef.current.get(contextDragKeyRef.current ?? "")?.title.trim() || "Thread";
     const overComposer = moveThreadContextDragGhost(point, { title, count: threads.length });
     // Outside a composer, the dragged thread can open as a split pane instead.
-    const paneThread = parseScopedThreadKey(contextDragKeyRef.current ?? "");
+    // A pane shows one thread, so a multi-thread drag only offers composer drops.
+    const paneThread = threads.length === 1 ? threads[0]! : null;
     if (paneThread && useChatPanesStore.getState().drag === null) {
       startChatPaneDrag(paneThread, null);
     }
-    hoverChatPaneDrop(overComposer ? null : point);
+    hoverChatPaneDrop(overComposer || !paneThread ? null : point);
     return true;
   };
   const dropThreadContextDrag = (point: { x: number; y: number }) => {
@@ -2401,10 +2402,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 threadRef.environmentId,
                 AuthOrchestrationOperateScope,
               ),
-              canOpenInSplit: canOpenThreadInSplit(
-                parseScopedThreadKey(routeThreadKeyRef.current ?? ""),
-                threadRef,
-              ),
+              canOpenInSplit:
+                !isMobile &&
+                canOpenThreadInSplit(
+                  parseScopedThreadKey(routeThreadKeyRef.current ?? ""),
+                  threadRef,
+                ),
               branch: thread.branch ?? null,
               projectFilter: threadProjectGroup
                 ? {

@@ -202,6 +202,12 @@ export function closePane(
   return closedRoute && rest ? collectLeaves(rest)[0]!.threadRef : null;
 }
 
+/** Closes the pane showing the route thread, returning the pane the route should move to. */
+export function closeRouteThreadPane(routeThreadRef: ScopedThreadRef): ScopedThreadRef | null {
+  const leaf = findLeafByThread(useChatPanesStore.getState().root, routeThreadRef);
+  return leaf ? closePane(leaf.id, routeThreadRef) : null;
+}
+
 export function startChatPaneDrag(threadRef: ScopedThreadRef, sourcePaneId: ChatPaneId | null) {
   useChatPanesStore.setState({ drag: { threadRef, sourcePaneId, target: null } });
 }
