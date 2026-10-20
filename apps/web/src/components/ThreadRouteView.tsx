@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
+import { ChatPaneDropArea, ChatPanes } from "./chat/ChatPanes";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { SOLO_PANE_ID, selectRouteLayout, useChatPanesStore } from "../chatPanesStore";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useEnvironmentThreadRefs, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentShellStatus } from "../state/shell";
@@ -40,6 +43,12 @@ export function ThreadRouteView({
   );
   const serverThreadRef = target.kind === "server" ? target.threadRef : null;
   const serverThreadShell = useQuietThreadShell(serverThreadRef);
+  const isMobileViewport = useMediaQuery("max-sm");
+  const paneLayout = useChatPanesStore((state) =>
+    target.kind === "server" && !isMobileViewport
+      ? selectRouteLayout(state.root, target.threadRef)
+      : null,
+  );
   const shellStatus = useEnvironmentShellStatus(serverThreadRef?.environmentId ?? null);
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
   const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shellStatus);
@@ -136,6 +145,8 @@ export function ThreadRouteView({
     } else {
       redirect = <Navigate to="/" replace />;
     }
+  } else if (paneLayout) {
+    view = <ChatPanes root={paneLayout} routeThreadRef={target.threadRef} />;
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
       <ChatView
@@ -145,6 +156,7 @@ export function ThreadRouteView({
         routeKind="server"
       />
     );
+    if (!isMobileViewport) view = <ChatPaneDropArea paneId={SOLO_PANE_ID}>{view}</ChatPaneDropArea>;
   }
 
   return (

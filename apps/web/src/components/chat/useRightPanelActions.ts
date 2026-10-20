@@ -57,6 +57,8 @@ interface RightPanelActionsInput {
   readonly explicitDiffOpenRef: { current: ScopedThreadRef | null };
   readonly onDiffPanelOpen: (() => void) | undefined;
   readonly closeRightPanelSurface: (surface: RightPanelSurface) => void;
+  /** False while this view is a background split pane, which leaves window actions to the focused one. */
+  readonly inputOwnerRef: { readonly current: boolean };
 }
 
 /**
@@ -89,6 +91,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     activeProjectCwd,
     explicitDiffOpenRef,
     onDiffPanelOpen,
+    inputOwnerRef,
   } = input;
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
@@ -292,7 +295,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   useEffect(
     () =>
       subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanelStable();
+        if (action === "toggle-panel" && inputOwnerRef.current) togglePreviewPanelStable();
       }),
     [togglePreviewPanelStable],
   );
