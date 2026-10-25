@@ -464,6 +464,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A thread switch remounts the list's scroll node, so the listeners reattach.
     activeThreadId,
     composerRef,
+    inputOwnerRef,
     isTimelineAtLogicalEndStable,
     legendListRef,
     timelineRealContentOverflowsViewportStable,

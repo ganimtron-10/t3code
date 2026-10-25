@@ -729,6 +729,7 @@ export function useComposerStash(input: {
     return () => window.removeEventListener("keydown", handler, true);
   }, [
     activePendingProgress,
+    composerFormRef,
     isComposerModelPickerOpen,
     keybindings,
     pendingUserInputs.length,
