@@ -15,6 +15,8 @@ export interface ChatPaneLeaf {
   readonly kind: "leaf";
   readonly id: ChatPaneId;
   readonly threadRef: ScopedThreadRef;
+  /** Folded to its header bar. */
+  readonly collapsed?: boolean;
 }
 
 export interface ChatPaneSplit {
@@ -93,6 +95,32 @@ export function splitPane(
   return first === root.first && second === root.second ? root : { ...root, first, second };
 }
 
+export function setPaneCollapsed(
+  root: ChatPaneNode,
+  paneId: ChatPaneId,
+  collapsed: boolean,
+): ChatPaneNode {
+  if (root.kind === "leaf") {
+    if (root.id !== paneId || (root.collapsed === true) === collapsed) return root;
+    return collapsed
+      ? { ...root, collapsed: true }
+      : { kind: "leaf", id: root.id, threadRef: root.threadRef };
+  }
+  const first = setPaneCollapsed(root.first, paneId, collapsed);
+  const second = setPaneCollapsed(root.second, paneId, collapsed);
+  return first === root.first && second === root.second ? root : { ...root, first, second };
+}
+
+/**
+ * Whether every pane in `node` is folded. The focused thread's pane always
+ * shows, so it never counts as folded even when its saved flag says so.
+ */
+export function isPaneFolded(node: ChatPaneNode, focusedThreadKey: string): boolean {
+  return collectLeaves(node).every(
+    (leaf) => leaf.collapsed === true && scopedThreadKey(leaf.threadRef) !== focusedThreadKey,
+  );
+}
+
 /** Removes a node. Its sibling takes the parent's slot; removing the root empties the layout. */
 export function removePane(root: ChatPaneNode, paneId: ChatPaneId): ChatPaneNode | null {
   if (root.id === paneId) return null;
@@ -143,7 +171,7 @@ export function isRestorableLayout(root: ChatPaneNode): boolean {
 }
 
 /** How many panes sit side by side along `direction`'s axis inside `node`. */
-function paneSpan(node: ChatPaneNode, direction: SplitDirection): number {
+export function paneSpan(node: ChatPaneNode, direction: SplitDirection): number {
   if (node.kind === "leaf") return 1;
   const first = paneSpan(node.first, direction);
   const second = paneSpan(node.second, direction);

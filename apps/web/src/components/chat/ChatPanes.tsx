@@ -13,6 +13,8 @@ import {
 
 import {
   clampPaneRatio,
+  isPaneFolded,
+  paneSpan,
   type ChatPaneId,
   type ChatPaneLeaf,
   type ChatPaneNode,
@@ -23,8 +25,10 @@ import {
   closePane,
   commitChatPaneDrop,
   endChatPaneDrag,
+  expandThreadPane,
   hoverChatPaneDrop,
   startChatPaneDrag,
+  togglePaneCollapsed,
   useChatPanesStore,
 } from "~/chatPanesStore";
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -34,6 +38,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import ChatView from "../ChatView";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const ZONE_CLASS: Record<DropZone, string> = {
   top: "inset-x-0 top-0 h-1/2",
@@ -116,13 +121,15 @@ export function ChatPanes({
   routeThreadRef: ScopedThreadRef;
 }) {
   const routeThreadKey = scopedThreadKey(routeThreadRef);
+  // Focusing a folded pane, from the sidebar or a reload, opens it back up.
+  useEffect(() => expandThreadPane(routeThreadRef), [routeThreadRef]);
   return (
     <div
       // Panes keep a readable minimum size; past that the layout scrolls instead of crushing them.
       className="relative flex min-h-0 min-w-0 flex-1 overflow-auto bg-background"
       data-chat-panes-root={root.id}
     >
-      <div className="flex flex-1" style={minSize(root)}>
+      <div className="flex flex-1" style={minSize(root, routeThreadKey)}>
         <PaneNode
           node={root}
           edges={WINDOW_TOP_EDGES}
@@ -144,14 +151,19 @@ interface PaneEdges {
 
 const WINDOW_TOP_EDGES: PaneEdges = { top: true, left: true, right: true };
 
+/** How a folded pane draws its header: a bar across a column, or a strip down a row. */
+type PaneFold = "bar" | "strip";
+
 interface PaneNodeProps {
   node: ChatPaneNode;
   edges: PaneEdges;
   routeThreadKey: string;
   routeThreadRef: ScopedThreadRef;
+  /** Set inside a run of folded panes, which share the space their headers need. */
+  fold?: PaneFold | undefined;
 }
 
-function PaneNode({ node, edges, routeThreadKey, routeThreadRef }: PaneNodeProps) {
+function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold }: PaneNodeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   if (node.kind === "leaf") {
     return (
@@ -160,6 +172,7 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef }: PaneNodeProps
         edges={edges}
         focused={scopedThreadKey(node.threadRef) === routeThreadKey}
         routeThreadRef={routeThreadRef}
+        fold={fold}
       />
     );
   }
@@ -167,30 +180,55 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef }: PaneNodeProps
   const splitId = node.id;
   const firstEdges = horizontal ? { ...edges, right: false } : edges;
   const secondEdges = horizontal ? { ...edges, left: false } : { ...edges, top: false };
+  const sideFold = (side: ChatPaneNode): PaneFold | undefined =>
+    fold ?? (isPaneFolded(side, routeThreadKey) ? (horizontal ? "strip" : "bar") : undefined);
+  const firstFold = sideFold(node.first);
+  const secondFold = sideFold(node.second);
+  const resizable = !firstFold && !secondFold;
+  // A folded side shrinks to its headers and the open side takes the rest.
+  const sideStyle = (side: ChatPaneNode, sideFolded: boolean): CSSProperties | undefined => {
+    if (fold) return undefined;
+    if (sideFolded) return { flex: `0 0 ${foldedExtent(side, node.direction)}px` };
+    return minSize(side, routeThreadKey);
+  };
   return (
     <div
       ref={containerRef}
       className={cn("flex min-h-0 min-w-0 flex-1", horizontal ? "flex-row" : "flex-col")}
       style={{ "--pane-ratio": node.ratio } as CSSProperties}
     >
-      <div className="flex flex-[var(--pane-ratio)_1_0px] flex-col" style={minSize(node.first)}>
+      <div
+        className={cn(
+          "flex flex-col",
+          resizable ? "flex-[var(--pane-ratio)_1_0px]" : "min-h-0 min-w-0 flex-[1_1_0px]",
+        )}
+        style={sideStyle(node.first, firstFold !== undefined)}
+      >
         <PaneNode
           key={node.first.id}
           node={node.first}
           edges={firstEdges}
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
+          fold={firstFold}
         />
       </div>
-      <ResizeHandle
-        direction={node.direction}
-        ratio={node.ratio}
-        containerRef={containerRef}
-        onCommit={(ratio) => useChatPanesStore.getState().setRatio(splitId, ratio)}
-      />
+      {resizable ? (
+        <ResizeHandle
+          direction={node.direction}
+          ratio={node.ratio}
+          containerRef={containerRef}
+          onCommit={(ratio) => useChatPanesStore.getState().setRatio(splitId, ratio)}
+        />
+      ) : (
+        <div aria-hidden className={cn("shrink-0 bg-border", horizontal ? "w-px" : "h-px")} />
+      )}
       <div
-        className="flex flex-[calc(1-var(--pane-ratio))_1_0px] flex-col"
-        style={minSize(node.second)}
+        className={cn(
+          "flex flex-col",
+          resizable ? "flex-[calc(1-var(--pane-ratio))_1_0px]" : "min-h-0 min-w-0 flex-[1_1_0px]",
+        )}
+        style={sideStyle(node.second, secondFold !== undefined)}
       >
         <PaneNode
           key={node.second.id}
@@ -198,6 +236,7 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef }: PaneNodeProps
           edges={secondEdges}
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
+          fold={secondFold}
         />
       </div>
     </div>
@@ -215,15 +254,33 @@ function capturePointer(element: Element, pointerId: number) {
 
 const MIN_PANE_WIDTH_PX = 320;
 const MIN_PANE_HEIGHT_PX = 240;
+/** A folded pane's header, `h-7` across or `w-7` down. */
+const FOLDED_PANE_PX = 28;
+
+/** Room a run of folded panes needs along `direction`: their headers and the dividers between. */
+function foldedExtent(node: ChatPaneNode, direction: SplitDirection): number {
+  const span = paneSpan(node, direction);
+  return span * FOLDED_PANE_PX + span - 1;
+}
 
 /**
  * Explicit minimums rather than `min-width: auto`, which would size a pane
  * to its whole timeline instead of letting the timeline scroll inside it.
  */
-function minSize(node: ChatPaneNode): { minWidth: number; minHeight: number } {
+function minSize(
+  node: ChatPaneNode,
+  routeThreadKey: string,
+): { minWidth: number; minHeight: number } {
   if (node.kind === "leaf") return { minWidth: MIN_PANE_WIDTH_PX, minHeight: MIN_PANE_HEIGHT_PX };
-  const first = minSize(node.first);
-  const second = minSize(node.second);
+  const sideMin = (side: ChatPaneNode) => {
+    if (!isPaneFolded(side, routeThreadKey)) return minSize(side, routeThreadKey);
+    const extent = foldedExtent(side, node.direction);
+    return node.direction === "horizontal"
+      ? { minWidth: extent, minHeight: 0 }
+      : { minWidth: 0, minHeight: extent };
+  };
+  const first = sideMin(node.first);
+  const second = sideMin(node.second);
   return node.direction === "horizontal"
     ? {
         minWidth: first.minWidth + second.minWidth,
@@ -243,17 +300,20 @@ const PaneLeaf = memo(function PaneLeaf({
   edges,
   focused,
   routeThreadRef,
+  fold,
 }: {
   leaf: ChatPaneLeaf;
   edges: PaneEdges;
   focused: boolean;
   routeThreadRef: ScopedThreadRef;
+  fold: PaneFold | undefined;
 }) {
   const { threadRef } = leaf;
   const follow = useFollowThread();
   const shell = useThreadShell(threadRef);
   const deleted = shell?.deletedAt != null;
   const close = useStableCallback(() => follow(closePane(leaf.id, routeThreadRef), true));
+  const toggleCollapsed = () => follow(togglePaneCollapsed(leaf.id, routeThreadRef));
 
   // A background thread deleted elsewhere takes its pane with it. The route
   // thread's pane is closed by ThreadRouteView, which also picks where to go.
@@ -267,6 +327,8 @@ const PaneLeaf = memo(function PaneLeaf({
   const onHeaderPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || !event.isPrimary) return;
     const header = event.currentTarget;
+    const onTitle =
+      event.target instanceof Element && event.target.closest("[data-chat-pane-title]") !== null;
     const pointerId = event.pointerId;
     const start = { x: event.clientX, y: event.clientY };
     let dragging = false;
@@ -296,6 +358,7 @@ const PaneLeaf = memo(function PaneLeaf({
       if (up.pointerId !== pointerId) return;
       finish();
       if (dragging) follow(commitChatPaneDrop(routeThreadRef));
+      else if (onTitle) toggleCollapsed();
       else if (!focused) follow(threadRef);
     };
     const onCancel = () => {
@@ -320,10 +383,11 @@ const PaneLeaf = memo(function PaneLeaf({
   };
 
   const title = shell?.title ?? "Thread";
+  const strip = fold === "strip";
   return (
     <section
       aria-label={title}
-      className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+      className={cn("relative flex min-h-0 min-w-0 flex-1", strip ? "flex-row" : "flex-col")}
       data-chat-pane-drop={leaf.id}
       data-chat-pane-focused={focused ? "true" : "false"}
       onPointerDownCapture={(event) => {
@@ -336,22 +400,54 @@ const PaneLeaf = memo(function PaneLeaf({
     >
       <div
         className={cn(
-          "flex h-7 shrink-0 cursor-grab items-center gap-1.5 border-b px-2 text-xs select-none active:cursor-grabbing [-webkit-app-region:no-drag]",
+          "flex shrink-0 cursor-grab items-center gap-1.5 text-xs select-none active:cursor-grabbing [-webkit-app-region:no-drag]",
+          strip ? "w-7 flex-1 flex-col py-2" : "h-7 border-b px-2",
           // Only the panes in the window's top corners sit under the traffic
           // lights or the native window controls.
-          edges.top && edges.left && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          edges.top && edges.right && "wco:pr-(--workspace-native-controls-inset)",
+          !strip && edges.top && edges.left && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          !strip && edges.top && edges.right && "wco:pr-(--workspace-native-controls-inset)",
           focused
             ? "border-b-primary/60 bg-primary/[0.06] text-foreground"
             : "border-b-border/70 text-muted-foreground",
+          fold && "bg-muted/40",
         )}
         data-chat-pane-header
         onPointerDown={onHeaderPointerDown}
       >
         <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-        <span className="min-w-0 truncate font-medium">{title}</span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                role="button"
+                tabIndex={0}
+                aria-expanded={fold === undefined}
+                className={cn(
+                  "min-w-0 cursor-pointer truncate font-medium hover:text-foreground",
+                  strip && "min-h-0 [writing-mode:vertical-rl]",
+                )}
+                data-chat-pane-title
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  toggleCollapsed();
+                }}
+              />
+            }
+          >
+            {title}
+          </TooltipTrigger>
+          <TooltipPopup side={strip ? "right" : "bottom"}>{title}</TooltipPopup>
+        </Tooltip>
         {/* The gap after the title still moves the window, as the title bar it replaces did. */}
-        <span aria-hidden className={cn("h-full min-w-4 flex-1", edges.top && "drag-region")} />
+        <span
+          aria-hidden
+          className={cn(
+            "flex-1",
+            strip ? "w-full min-h-4" : "h-full min-w-4",
+            !strip && edges.top && "drag-region",
+          )}
+        />
         <Button
           variant="ghost"
           size="icon-micro"
@@ -363,7 +459,7 @@ const PaneLeaf = memo(function PaneLeaf({
           <XIcon />
         </Button>
       </div>
-      {shell && !deleted ? (
+      {fold ? null : shell && !deleted ? (
         <ChatView
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
