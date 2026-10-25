@@ -1937,7 +1937,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       switch (plan.kind) {
         case "settle": {
           settlingThreadKeysRef.current.add(activeKey);
-          const navigateAfterSettle = planForwardNavigation(activeKey);
+          const navigateAfterSettle = isThreadInPane(threadRef)
+            ? null
+            : planForwardNavigation(activeKey);
           const settled = await run(settleThread(threadRef), "Failed to settle thread").finally(
             () => settlingThreadKeysRef.current.delete(activeKey),
           );
