@@ -15,7 +15,7 @@ export interface ChatPaneLeaf {
   readonly kind: "leaf";
   readonly id: ChatPaneId;
   readonly threadRef: ScopedThreadRef;
-  /** Folded to its header bar. */
+  /** Shown as its header only; saved with the layout. */
   readonly collapsed?: boolean;
 }
 
