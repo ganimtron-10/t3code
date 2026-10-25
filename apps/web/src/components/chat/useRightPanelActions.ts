@@ -297,7 +297,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       subscribePreviewAction((action) => {
         if (action === "toggle-panel" && inputOwnerRef.current) togglePreviewPanelStable();
       }),
-    [togglePreviewPanelStable],
+    [inputOwnerRef, togglePreviewPanelStable],
   );
 
   const shortcuts = {
