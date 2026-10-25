@@ -1,4 +1,4 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { GripVerticalIcon, XIcon } from "lucide-react";
@@ -122,7 +122,12 @@ export function ChatPanes({
 }) {
   const routeThreadKey = scopedThreadKey(routeThreadRef);
   // Focusing a folded pane, from the sidebar or a reload, opens it back up.
-  useEffect(() => expandThreadPane(routeThreadRef), [routeThreadRef]);
+  // Keyed on the thread, not the ref object, so folding the focused pane
+  // isn't undone by a render that lands before the route moves on.
+  useEffect(() => {
+    const ref = parseScopedThreadKey(routeThreadKey);
+    if (ref) expandThreadPane(ref);
+  }, [routeThreadKey]);
   return (
     <div
       // Panes keep a readable minimum size; past that the layout scrolls instead of crushing them.
@@ -423,7 +428,7 @@ const PaneLeaf = memo(function PaneLeaf({
                 tabIndex={0}
                 aria-expanded={fold === undefined}
                 className={cn(
-                  "min-w-0 cursor-pointer truncate font-medium hover:text-foreground",
+                  "min-w-0 cursor-pointer truncate rounded-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
                   strip && "min-h-0 [writing-mode:vertical-rl]",
                 )}
                 data-chat-pane-title
