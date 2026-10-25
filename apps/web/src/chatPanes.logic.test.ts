@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -6,11 +7,13 @@ import {
   equalizePanes,
   findLeafByThread,
   findNode,
+  isPaneFolded,
   isRestorableLayout,
   movePane,
   removePane,
   resolveDropZone,
   resolveEdgeDropZone,
+  setPaneCollapsed,
   setPaneRatio,
   splitPane,
   type ChatPaneLeaf,
@@ -121,6 +124,48 @@ describe("chat pane tree", () => {
     const layout = splitPane(leaf("a"), "a", "right", leaf("b"), "s1");
     expect(findLeafByThread(layout, ref("b"))?.id).toBe("b");
     expect(findLeafByThread(layout, ref("z"))).toBeNull();
+  });
+});
+
+describe("collapsed panes", () => {
+  const key = (id: string) => scopedThreadKey(ref(id));
+  const layout = (): ChatPaneNode => ({
+    kind: "split",
+    id: "s1",
+    direction: "horizontal",
+    ratio: 0.5,
+    first: leaf("a"),
+    second: {
+      kind: "split",
+      id: "s2",
+      direction: "vertical",
+      ratio: 0.5,
+      first: leaf("b"),
+      second: leaf("c"),
+    },
+  });
+
+  it("folds and unfolds one pane and keeps the tree for a no-op", () => {
+    const root = layout();
+    const folded = setPaneCollapsed(root, "b", true);
+    expect(findNode(folded, "b")).toMatchObject({ collapsed: true });
+    expect(findNode(folded, "c")).not.toHaveProperty("collapsed");
+    expect(setPaneCollapsed(folded, "b", true)).toBe(folded);
+    expect(setPaneCollapsed(root, "missing", true)).toBe(root);
+    expect(findNode(setPaneCollapsed(folded, "b", false), "b")).toEqual(leaf("b"));
+  });
+
+  it("treats a subtree as folded only when every pane in it is, focus excepted", () => {
+    const root = setPaneCollapsed(setPaneCollapsed(layout(), "b", true), "c", true);
+    const right = root.kind === "split" ? root.second : root;
+    expect(isPaneFolded(right, key("a"))).toBe(true);
+    expect(isPaneFolded(right, key("c"))).toBe(false);
+    expect(isPaneFolded(setPaneCollapsed(right, "c", false), key("a"))).toBe(false);
+  });
+
+  it("carries the folded flag when a pane moves", () => {
+    const moved = movePane(setPaneCollapsed(layout(), "b", true), "b", "a", "left", "s3");
+    expect(findNode(moved, "b")).toMatchObject({ collapsed: true });
   });
 });
 
