@@ -24,6 +24,7 @@ import { useRouter } from "@tanstack/react-router";
 
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { closeThreadPane } from "../chatPanesStore";
 import { environmentSession, readEnvironmentScope } from "../state/session";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -725,6 +726,15 @@ export function useThreadActions() {
     }
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(target), wokeAt);
+    }
+    // A settled thread leaves the split layout as if its pane were closed.
+    const paneSurvivor = closeThreadPane(target, getCurrentRouteThreadRef());
+    if (paneSurvivor) {
+      void router.navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(paneSurvivor),
+        replace: true,
+      });
     }
     showThreadUndoNotice({
       action: "Settled",

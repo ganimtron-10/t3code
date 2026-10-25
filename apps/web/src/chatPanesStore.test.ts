@@ -7,9 +7,12 @@ import {
   canOpenThreadInSplit,
   closePane,
   closeRouteThreadPane,
+  closeThreadPane,
+  expandThreadPane,
   openThreadInSplit,
   placeThread,
   selectRouteLayout,
+  togglePaneCollapsed,
   useChatPanesStore,
 } from "./chatPanesStore";
 
@@ -56,5 +59,34 @@ describe("chat panes store", () => {
     expect(threads()).toEqual(["a", "c"]);
     expect(closeRouteThreadPane(ref("a"))?.threadId).toBe("c");
     expect(useChatPanesStore.getState().root).toBeNull();
+  });
+
+  it("closes a settled thread's pane and hands the route on when it was focused", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    openThreadInSplit(ref("a"), ref("c"));
+    expect(closeThreadPane(ref("c"), ref("a"))).toBeNull();
+    expect(threads()).toEqual(["a", "b"]);
+    expect(closeThreadPane(ref("z"), ref("a"))).toBeNull();
+    expect(closeThreadPane(ref("a"), ref("a"))?.threadId).toBe("b");
+    expect(useChatPanesStore.getState().root).toBeNull();
+  });
+
+  it("folds a pane, moving focus off it first, and never folds the last open one", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    const collapsed = (threadId: string) =>
+      findLeafByThread(useChatPanesStore.getState().root, ref(threadId))!.collapsed === true;
+
+    expect(togglePaneCollapsed(paneOf("b"), ref("a"))).toBeNull();
+    expect(collapsed("b")).toBe(true);
+    expect(togglePaneCollapsed(paneOf("a"), ref("a"))).toBeNull();
+    expect(collapsed("a")).toBe(false);
+
+    expect(togglePaneCollapsed(paneOf("b"), ref("a"))).toBeNull();
+    expect(collapsed("b")).toBe(false);
+    expect(togglePaneCollapsed(paneOf("a"), ref("a"))?.threadId).toBe("b");
+    expect(collapsed("a")).toBe(true);
+
+    expandThreadPane(ref("a"));
+    expect(collapsed("a")).toBe(false);
   });
 });
