@@ -51,5 +51,5 @@ export function usePasteToFocusComposer(
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [activeThreadId, composerRef, inputOwnerRef]);
 }
