@@ -11,6 +11,7 @@ import { assert, it, vi } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
+  AgentProfileId,
   ChatAttachmentId,
   ComposerContextId,
   type ChatAttachment,
@@ -477,6 +478,27 @@ it.effect("retains automation and sender attribution while a message waits in th
     assert.equal(message?.scheduledTaskId, scheduledTaskId);
     assert.equal(message?.senderThreadId, senderThreadId);
     assert.equal(message?.text, "Run the audit");
+  }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("records the agent profile only on threads launched with one", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const withProfile = yield* launches.launch({
+      ...launchInput({ command: "command:profile", thread: "thread:profile" }),
+      agentProfileId: AgentProfileId.make("qa"),
+    });
+    const plain = yield* launches.launch(
+      launchInput({ command: "command:plain", thread: "thread:plain" }),
+    );
+    const stored = yield* threads.getThreadProjection(withProfile.threadId);
+    assert.equal(stored.thread.agentProfileId, "qa");
+    const wire = yield* encodeThreadProjection(stored);
+    assert.equal(wire.thread.agentProfileId, "qa");
+    const plainStored = yield* threads.getThreadProjection(plain.threadId);
+    assert.notProperty(plainStored.thread, "agentProfileId");
   }).pipe(Effect.provide(harness.layer));
 });
 

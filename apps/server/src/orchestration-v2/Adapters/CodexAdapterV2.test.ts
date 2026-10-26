@@ -493,6 +493,30 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect("sends agent profile instructions as application context only when set", () =>
+    Effect.gen(function* () {
+      const base = {
+        nativeThreadId: "native-agent-profile",
+        codexInput: [{ type: "text" as const, text: "review this" }],
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: null,
+        } as const,
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      };
+      const withProfile = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        ...base,
+        agentInstructions: "You are QA (Verifies the change).",
+      });
+      assert.deepEqual(withProfile.additionalContext, {
+        t3_agent_profile: { kind: "application", value: "You are QA (Verifies the change)." },
+      });
+      const without = yield* CodexAdapterV2.buildCodexTurnStartParams(base);
+      assert.isUndefined(without.additionalContext);
+    }),
+  );
+
   it.effect("adds default-mode developer instructions when the T3 MCP server is attached", () =>
     Effect.gen(function* () {
       const params = yield* CodexAdapterV2.buildCodexTurnStartParams({

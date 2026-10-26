@@ -234,6 +234,30 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.include(options.settings, { showThinkingSummaries: true });
   });
 
+  it("appends agent profile instructions to the system prompt only when set", () => {
+    const base = {
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "profile-thread",
+      resume: false,
+      cwd: "/workspace",
+    };
+    const plain = ClaudeAdapterV2.makeClaudeQueryOptions(base);
+    const withProfile = ClaudeAdapterV2.makeClaudeQueryOptions({
+      ...base,
+      agentInstructions: "You are Developer (Writes the code).",
+    });
+    assert.isObject(plain.systemPrompt);
+    assert.isObject(withProfile.systemPrompt);
+    if (typeof plain.systemPrompt !== "object" || typeof withProfile.systemPrompt !== "object") {
+      return;
+    }
+    assert.notInclude(plain.systemPrompt.append ?? "", "You are Developer");
+    assert.equal(
+      withProfile.systemPrompt.append,
+      `${plain.systemPrompt.append}\n\nYou are Developer (Writes the code).`,
+    );
+  });
+
   it("preserves an explicit omitted thinking display", () => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,

@@ -2305,6 +2305,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       modelSelection: command.modelSelection,
       runtimeMode: command.runtimeMode,
       interactionMode: command.interactionMode,
+      ...(command.agentProfileId === undefined ? {} : { agentProfileId: command.agentProfileId }),
       branch: command.branch,
       worktreePath: command.worktreePath,
       activeProviderThreadId: null,

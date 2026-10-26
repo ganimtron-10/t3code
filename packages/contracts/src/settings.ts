@@ -1,3 +1,4 @@
+import { AgentProfile, DEFAULT_AGENT_PROFILES } from "./agentProfile.ts";
 import { SshDeviceHostConfigs } from "./device.ts";
 import {
   AuthOrchestrationOperateScope,
@@ -1271,6 +1272,9 @@ export const ServerSettings = Schema.Struct({
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  agentProfiles: Schema.Array(AgentProfile).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_PROFILES)),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1540,6 +1544,7 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+  agentProfiles: Schema.optionalKey(Schema.Array(AgentProfile)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

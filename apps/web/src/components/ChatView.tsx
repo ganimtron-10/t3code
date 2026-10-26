@@ -36,7 +36,7 @@ import {
   latestExecutedRun,
   latestRootProviderFailure,
 } from "@t3tools/shared/orchestrationV2ThreadError";
-import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import type { AgentProfile, UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
@@ -1575,6 +1575,7 @@ export default function ChatView(props: ChatViewProps) {
     (isServerThread ? activeThread?.runtimeMode : undefined) ??
     defaultRuntimeMode;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
+  const draftAgentProfileId = isLocalDraftThread ? (draftThread?.agentProfileId ?? null) : null;
   const canCheckoutPullRequestIntoThread = canWriteSourceControl && isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   // Prefer the larger of turn-item-committed ids and projection messages so
@@ -6744,6 +6745,9 @@ export default function ChatView(props: ChatViewProps) {
                         modelSelection: target.selection,
                         runtimeMode,
                         interactionMode: target.interactionMode,
+                        ...(draftAgentProfileId === null
+                          ? {}
+                          : { agentProfileId: draftAgentProfileId }),
                         branch: activeThreadBranch,
                         worktreePath: null,
                         createdAt: messageCreatedAt,
@@ -7018,6 +7022,9 @@ export default function ChatView(props: ChatViewProps) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: sendInteractionMode,
+                      ...(draftAgentProfileId === null
+                        ? {}
+                        : { agentProfileId: draftAgentProfileId }),
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
@@ -7618,6 +7625,22 @@ export default function ChatView(props: ChatViewProps) {
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);
+  const agentProfiles =
+    serverConfig?.environment.capabilities.agentProfiles === true
+      ? settings.agentProfiles
+      : undefined;
+  // A profile's model and modes are starting defaults; the user can still change them.
+  const onAgentProfileChange = (profile: AgentProfile | null) => {
+    setDraftThreadContext(composerDraftTarget, { agentProfileId: profile?.id ?? null });
+    if (profile?.modelSelection) {
+      onProviderModelSelect(profile.modelSelection.instanceId, profile.modelSelection.model, {
+        focusComposer: false,
+      });
+    }
+    if (profile?.runtimeMode) handleRuntimeModeChange(profile.runtimeMode);
+    if (profile?.interactionMode) handleInteractionModeChange(profile.interactionMode);
+  };
+  const onAgentProfileChangeStable = useStableCallback(onAgentProfileChange);
   const onEnvModeChange = (mode: DraftThreadEnvMode) => {
     if (multipleModelSelections !== null) return;
     if (canOverrideServerThreadEnvMode) {
@@ -8425,6 +8448,13 @@ export default function ChatView(props: ChatViewProps) {
                               toggleInteractionMode={toggleInteractionModeStable}
                               handleRuntimeModeChange={handleRuntimeModeChangeStable}
                               handleInteractionModeChange={handleInteractionModeChangeStable}
+                              {...(isLocalDraftThread && agentProfiles
+                                ? {
+                                    agentProfiles,
+                                    agentProfileId: draftAgentProfileId,
+                                    onAgentProfileChange: onAgentProfileChangeStable,
+                                  }
+                                : {})}
                               focusComposer={focusComposerStable}
                               scheduleComposerFocus={scheduleComposerFocusStable}
                               setThreadError={setThreadError}

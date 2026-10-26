@@ -51,6 +51,40 @@ describe("ServerSettings response streaming", () => {
   });
 });
 
+describe("agent profiles", () => {
+  it("seeds the four built-in profiles and keeps an emptied list empty", () => {
+    expect(DEFAULT_SERVER_SETTINGS.agentProfiles.map((profile) => profile.id)).toEqual([
+      "chief",
+      "developer",
+      "qa",
+      "infra",
+    ]);
+    expect(decodeServerSettings({ agentProfiles: [] }).agentProfiles).toEqual([]);
+  });
+
+  it("fills optional profile fields and round-trips an edited profile", () => {
+    const settings = decodeServerSettings({
+      agentProfiles: [{ id: "reviewer", name: "Reviewer", instructions: "Review diffs." }],
+    });
+    expect(settings.agentProfiles[0]).toEqual({
+      id: "reviewer",
+      name: "Reviewer",
+      avatar: "",
+      role: "",
+      instructions: "Review diffs.",
+      modelSelection: null,
+      runtimeMode: null,
+      interactionMode: null,
+    });
+    expect(decodeServerSettings(encodeServerSettings(settings)).agentProfiles).toEqual(
+      settings.agentProfiles,
+    );
+    expect(
+      decodeServerSettingsPatch({ agentProfiles: [{ id: "qa", name: "QA" }] }).agentProfiles,
+    ).toHaveLength(1);
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();

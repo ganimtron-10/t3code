@@ -11,6 +11,7 @@ import {
   MessageId,
   ProjectId,
   ProviderDriverKind,
+  AgentProfileId,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ThreadId,
@@ -1431,6 +1432,22 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe(
       "keep this prompt",
     );
+  });
+
+  it("keeps the picked agent profile across context edits and a bootstrap retry", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    expect(store.getDraftThread(draftId)?.agentProfileId ?? null).toBeNull();
+
+    store.setDraftThreadContext(draftId, { agentProfileId: AgentProfileId.make("qa") });
+    store.setDraftThreadContext(draftId, { runtimeMode: "approval-required" });
+    store.setLogicalProjectDraftThreadId(scopedProjectKey(projectRef), projectRef, draftId, {
+      threadId: ThreadId.make("thread-retry"),
+    });
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)?.agentProfileId).toBe("qa");
+
+    store.setDraftThreadContext(draftId, { agentProfileId: null });
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)?.agentProfileId).toBeNull();
   });
 
   it("clears only matching project draft mapping entries", () => {

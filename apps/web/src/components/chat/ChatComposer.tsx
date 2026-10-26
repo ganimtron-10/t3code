@@ -41,6 +41,8 @@ import type {
   ServerProvider,
   ThreadId,
   SnapShotSource,
+  AgentProfile,
+  AgentProfileId,
 } from "@t3tools/contracts";
 import {
   EnvironmentRequestInvalidError,
@@ -294,6 +296,7 @@ import {
   composerSuggestionOptionId,
 } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { AgentProfileSelector } from "../AgentProfileSelector";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -443,6 +446,7 @@ function SnapShotAttachmentFrame({
 const COMPOSER_PULL_REQUEST_LIST_LIMIT = 99;
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
 const COMPOSER_PULL_REQUEST_RESULT_LIMIT = 12;
+const EMPTY_AGENT_PROFILES: ReadonlyArray<AgentProfile> = [];
 const EMPTY_PULL_REQUEST_LIST_TARGETS: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>> =
   [];
 
@@ -1651,6 +1655,10 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  /** Non-empty only while the thread is still a draft, before the provider sees it. */
+  agentProfiles?: ReadonlyArray<AgentProfile>;
+  agentProfileId?: AgentProfileId | null;
+  onAgentProfileChange?: (profile: AgentProfile | null) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -1991,6 +1999,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    agentProfiles = EMPTY_AGENT_PROFILES,
+    agentProfileId = null,
+    onAgentProfileChange,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -5152,6 +5163,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           size="xs"
           className="@max-[400px]/composer-surface:hidden"
           data-resting-controls-separator="true"
+        />
+      ) : null}
+      {agentProfiles.length > 0 && onAgentProfileChange ? (
+        <AgentProfileSelector
+          profiles={agentProfiles}
+          value={agentProfileId}
+          onChange={onAgentProfileChange}
         />
       ) : null}
       <ProviderModelPicker
