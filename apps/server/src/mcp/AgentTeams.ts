@@ -50,10 +50,10 @@ export function teamDelegationRejection(
   parent: OrchestrationV2AppThread,
   activeMembers: number,
 ): string | undefined {
-  // Any delegated thread, profiled or not, would otherwise nest a second team
-  // that t3_team_list on the root cannot see.
-  if (parent.lineage.relationshipToParent === "subagent") {
-    return `Only a top-level thread can lead a team, and this thread was delegated. Ask your Chief (thread ${parent.lineage.rootThreadId}) with t3_thread_send instead.`;
+  // A delegated or forked thread keeps the original root, so its team would mix
+  // with the root's team and stay invisible to t3_team_list.
+  if (parent.lineage.relationshipToParent !== null) {
+    return `Only a top-level thread can lead a team, and this thread has a parent. Ask your Chief (thread ${parent.lineage.rootThreadId}) with t3_thread_send instead.`;
   }
   if (activeMembers >= TEAM_MAX_MEMBERS) {
     return `This team already has ${TEAM_MAX_MEMBERS} active members. Wait for one to finish, or stop one with task_cancel, before adding another.`;

@@ -135,7 +135,16 @@ describe("teamDelegationRejection", () => {
     assert.include(teamDelegationRejection(chief, TEAM_MAX_MEMBERS), "active members");
   });
 
-  it("stops any delegated thread, profiled or not, from starting a team", () => {
+  it("stops delegated and forked threads, profiled or not, from starting a team", () => {
+    const fork = {
+      ...chief,
+      lineage: {
+        parentThreadId: chiefId,
+        relationshipToParent: "fork" as const,
+        rootThreadId: chiefId,
+      },
+    };
+    assert.include(teamDelegationRejection(fork, 0), "Only a top-level thread");
     assert.include(teamDelegationRejection(developer, 0), "Only a top-level thread");
     assert.include(
       teamDelegationRejection(thread("thread:helper", { parent: chiefId }), 0),

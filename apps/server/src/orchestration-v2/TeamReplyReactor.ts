@@ -1,4 +1,11 @@
-import { CommandId, MessageId, type OrchestrationV2DomainEvent } from "@t3tools/contracts";
+import {
+  CommandId,
+  MessageId,
+  type OrchestrationV2AppThread,
+  type OrchestrationV2DomainEvent,
+  type RunId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,6 +36,35 @@ export class TeamReplyReactor extends Context.Service<
 const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
+
+  // Each sender is delivered on its own so one failure does not drop the rest.
+  const deliver = Effect.fnUntraced(function* (
+    senderId: ThreadId,
+    recipient: OrchestrationV2AppThread,
+    runId: RunId,
+    text: string,
+  ) {
+    const sender = yield* projections.getThread(senderId);
+    if (
+      !areTeamSiblings(sender, recipient) ||
+      sender.archivedAt !== null ||
+      sender.deletedAt !== null
+    ) {
+      return;
+    }
+    yield* engine.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make(`server:team-reply:${runId}:${sender.id}`),
+      threadId: sender.id,
+      messageId: MessageId.make(`message:team-reply:${runId}:${sender.id}`),
+      senderThreadId: recipient.id,
+      text,
+      attachments: [],
+      dispatchMode: { type: "queue_after_active" },
+      createdBy: "agent",
+      creationSource: "server",
+    });
+  });
 
   // Runs for every domain event; most return on the first check.
   const handle: TeamReplyReactor["Service"]["handle"] = Effect.fnUntraced(
@@ -65,26 +101,11 @@ const make = Effect.gen(function* () {
               ? `Reply to your message (cut to ${MAX_REPLY_CHARS} characters; ${readHint}):\n\n${answer.slice(0, MAX_REPLY_CHARS)}`
               : `Reply to your message:\n\n${answer}`;
       for (const senderId of senderIds) {
-        const sender = yield* projections.getThread(senderId);
-        if (
-          !areTeamSiblings(sender, recipient.thread) ||
-          sender.archivedAt !== null ||
-          sender.deletedAt !== null
-        ) {
-          continue;
-        }
-        yield* engine.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make(`server:team-reply:${run.id}:${sender.id}`),
-          threadId: sender.id,
-          messageId: MessageId.make(`message:team-reply:${run.id}:${sender.id}`),
-          senderThreadId: recipient.thread.id,
-          text,
-          attachments: [],
-          dispatchMode: { type: "queue_after_active" },
-          createdBy: "agent",
-          creationSource: "server",
-        });
+        yield* deliver(senderId, recipient.thread, run.id, text).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("delivering a team reply failed", { senderId, runId: run.id, cause }),
+          ),
+        );
       }
     },
     (effect, event) =>
