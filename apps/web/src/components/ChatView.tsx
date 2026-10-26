@@ -873,6 +873,12 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       routeKind: "server";
       draftId?: never;
+      /**
+       * Set when this view is one pane of a split layout. Only the focused
+       * pane owns window-level input; a background pane still renders and
+       * streams but never takes shortcuts, pastes or focus.
+       */
+      paneMode?: "focused" | "background";
     }
   | {
       environmentId: EnvironmentId;
@@ -882,6 +888,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       routeKind: "draft";
       draftId: DraftId;
+      paneMode?: never;
     };
 
 interface TerminalLaunchContext {
@@ -1043,7 +1050,14 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    paneMode,
   } = props;
+  const inputOwner = paneMode !== "background";
+  // Window listeners read this instead of resubscribing when focus moves between panes.
+  const inputOwnerRef = useRef(inputOwner);
+  useLayoutEffect(() => {
+    inputOwnerRef.current = inputOwner;
+  }, [inputOwner]);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const hasTerminalWriteAccess = () =>
@@ -1704,14 +1718,18 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelPresent = rightPanelPresence.present;
   const rightPanelControlsInPanel =
     shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
+  const rightPanelControlsAtRoot =
+    rightPanelPresent && !shouldUsePlanSidebarSheet && paneMode === undefined;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
   );
-  const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  // A pane resizes through its split gutter; maximizing would hide the chat
+  // column that holds the only control to restore it.
+  const canMaximizeRightPanel =
+    rightPanelOpen && !shouldUsePlanSidebarSheet && paneMode === undefined;
   const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const [threadPanelPresentation, setThreadPanelPresentation] =
@@ -3328,7 +3346,13 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const onInterruptStable = useStableCallback(onInterrupt);
-  useEffect(() => subscribeSnapShotComposerFocus(focusComposerStable), [focusComposerStable]);
+  useEffect(
+    () =>
+      subscribeSnapShotComposerFocus(() => {
+        if (inputOwnerRef.current) focusComposerStable();
+      }),
+    [focusComposerStable],
+  );
   const scheduleComposerFocus = () => {
     window.requestAnimationFrame(() => {
       focusComposer();
@@ -3918,7 +3942,7 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(
     () =>
       subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanelStable();
+        if (action === "toggle-panel" && inputOwnerRef.current) togglePreviewPanelStable();
       }),
     [togglePreviewPanelStable],
   );
@@ -4248,8 +4272,8 @@ export default function ChatView(props: ChatViewProps) {
           if (
             !(event.target instanceof Node) ||
             (!scrollNode.contains(event.target) &&
-              event.target !== document.body &&
-              event.target !== document.documentElement) ||
+              (!inputOwnerRef.current ||
+                (event.target !== document.body && event.target !== document.documentElement))) ||
             event.defaultPrevented ||
             event.isComposing ||
             event.altKey ||
@@ -4505,14 +4529,15 @@ export default function ChatView(props: ChatViewProps) {
   }, [timelineThreadReset]);
 
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen || !inputOwner) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposerStable();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposerStable, terminalUiState.terminalOpen]);
+    // A pane that becomes the input owner takes the caret, as a thread switch does.
+  }, [activeThread?.id, focusComposerStable, inputOwner, terminalUiState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
@@ -4526,6 +4551,7 @@ export default function ChatView(props: ChatViewProps) {
         frame = window.requestAnimationFrame(() => {
           frame = null;
           if (document.querySelector("[data-mcp-app-fullscreen]") !== null) return;
+          if (!inputOwnerRef.current) return;
           if (shouldRefocusComposerOnWindowFocus(document.activeElement)) focusComposerStable();
         });
       });
@@ -5520,7 +5546,7 @@ export default function ChatView(props: ChatViewProps) {
 
     if (!previous && current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
-      setTerminalFocusRequestId((value) => value + 1);
+      if (inputOwnerRef.current) setTerminalFocusRequestId((value) => value + 1);
       return;
     } else if (previous && !current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
@@ -5579,7 +5605,7 @@ export default function ChatView(props: ChatViewProps) {
       if (!event.repeat) composerRef.current?.openControl(command);
     }) satisfies ChatShortcutHandler;
   useChatShortcuts({
-    enabled: activeThreadId !== null,
+    enabled: activeThreadId !== null && inputOwner,
     keybindings,
     scriptKeybindings,
     getShortcutContext: getShortcutContextStable,
@@ -5708,6 +5734,7 @@ export default function ChatView(props: ChatViewProps) {
   // A focused desktop browser page forwards these chords as menu actions.
   useEffect(() => {
     return window.desktopBridge?.onMenuAction((action) => {
+      if (!inputOwnerRef.current) return;
       if (action === "rightPanel.toggle") toggleRightPanelStable();
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
     });
@@ -5725,7 +5752,7 @@ export default function ChatView(props: ChatViewProps) {
       }
     };
     const handler = (event: ClipboardEvent) => {
-      if (!activeThreadId || isCommandPaletteOpen()) return;
+      if (!activeThreadId || !inputOwnerRef.current || isCommandPaletteOpen()) return;
       if (getTerminalFocusOwner() !== null) return;
       if (composerRef.current?.isModelPickerOpen()) return;
       const text = pasteTextToFocusComposer(event);
@@ -7867,11 +7894,15 @@ export default function ChatView(props: ChatViewProps) {
   const panelLayoutControls = (
     <div
       className={cn(
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        "pointer-events-none z-50 flex items-center gap-1 [-webkit-app-region:no-drag]",
+        // Panes share the window, so their controls stay in their own header.
+        paneMode === undefined
+          ? "fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] mr-px h-[var(--workspace-topbar-height)]"
+          : "order-last ml-auto h-full shrink-0",
       )}
       data-workspace-titlebar-controls
     >
-      {!shouldUsePlanSidebarSheet ? (
+      {!shouldUsePlanSidebarSheet && paneMode === undefined ? (
         <span
           aria-hidden={!rightPanelOpen}
           className={cn(
@@ -7924,13 +7955,15 @@ export default function ChatView(props: ChatViewProps) {
             "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
             isElectron
               ? cn(
-                  "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
+                  paneMode === undefined && "drag-region",
+                  "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
                   reserveTitleBarControlInset &&
                     !inlineRightPanelOwnsTitleBar &&
                     "wco:pr-(--workspace-native-controls-inset)",
                 )
               : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            // A pane's own header sits at the window edge instead and takes these insets.
+            paneMode === undefined && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
         >
           {isElectron && rightPanelControlsAtRoot ? (
