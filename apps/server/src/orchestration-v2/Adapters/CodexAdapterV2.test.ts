@@ -510,8 +510,25 @@ describe("CodexAdapterV2 runtime policy", () => {
         agentInstructions: "You are QA (Verifies the change).",
       });
       assert.deepEqual(withProfile.additionalContext, {
-        t3_agent_profile: { kind: "application", value: "You are QA (Verifies the change)." },
+        t3_agent_profile_01: { kind: "application", value: "You are QA (Verifies the change)." },
       });
+      const long = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        ...base,
+        agentInstructions: Array.from({ length: 12 }, (_, i) => `${i} ${"é".repeat(700)}`).join(
+          "\n\n",
+        ),
+      });
+      const values = Object.entries(long.additionalContext ?? {})
+        .filter(([key]) => key.startsWith("t3_agent_profile_"))
+        .map(([, entry]) => entry.value);
+      assert.isAbove(values.length, 1);
+      for (const value of values) {
+        assert.isAtMost(new TextEncoder().encode(value).length, 4_000);
+      }
+      assert.equal(
+        values.join("\n\n"),
+        Array.from({ length: 12 }, (_, i) => `${i} ${"é".repeat(700)}`).join("\n\n"),
+      );
       const without = yield* CodexAdapterV2.buildCodexTurnStartParams(base);
       assert.isUndefined(without.additionalContext);
     }),

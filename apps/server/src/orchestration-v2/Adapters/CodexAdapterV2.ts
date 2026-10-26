@@ -100,6 +100,7 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
+  splitCodexAdditionalContextValue,
 } from "../../provider/CodexDeveloperInstructions.ts";
 import {
   describeMcpElicitation,
@@ -774,10 +775,12 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
         : undefined;
     // Additional context rather than developer_instructions: newer model
     // catalogs replace the client's developer_instructions with their own.
-    const agentContext =
-      input.agentInstructions === undefined
-        ? {}
-        : { t3_agent_profile: { kind: "application" as const, value: input.agentInstructions } };
+    const agentContext = Object.fromEntries(
+      splitCodexAdditionalContextValue(input.agentInstructions ?? "").map((value, index) => [
+        `t3_agent_profile_${String(index + 1).padStart(2, "0")}`,
+        { kind: "application" as const, value },
+      ]),
+    );
     const additionalContext =
       t3Context === undefined &&
       Object.keys(appContext).length === 0 &&

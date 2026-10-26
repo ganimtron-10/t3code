@@ -63,6 +63,9 @@ export function makeSubagentChildThread(input: {
     linkedPullRequest: null,
     pullRequests: [],
     historyOrigin: undefined,
+    // A child does its own scoped task; the parent's role rules (a Chief's
+    // "delegate everything") would steer it wrong.
+    agentProfileId: undefined,
     providerInstanceId: input.providerInstanceId,
     modelSelection: input.modelSelection,
     activeProviderThreadId: input.activeProviderThreadId,

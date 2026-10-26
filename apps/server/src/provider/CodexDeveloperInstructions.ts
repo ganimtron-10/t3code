@@ -14,6 +14,38 @@ import {
  */
 export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 
+const encoder = new TextEncoder();
+
+/** Splits text into pieces that each fit Codex's per-value cap, preferring paragraph breaks. */
+export function splitCodexAdditionalContextValue(
+  text: string,
+  maxBytes = CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
+): ReadonlyArray<string> {
+  const pieces: Array<string> = [];
+  let current = "";
+  const push = (piece: string) => {
+    const joined = current === "" ? piece : `${current}\n\n${piece}`;
+    if (encoder.encode(joined).length <= maxBytes) {
+      current = joined;
+      return;
+    }
+    if (current !== "") pieces.push(current);
+    current = "";
+    let chunk = "";
+    for (const char of piece) {
+      if (encoder.encode(chunk + char).length > maxBytes) {
+        pieces.push(chunk);
+        chunk = "";
+      }
+      chunk += char;
+    }
+    current = chunk;
+  };
+  for (const paragraph of text.split("\n\n")) push(paragraph);
+  if (current !== "") pieces.push(current);
+  return pieces;
+}
+
 const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## T3 Code devices
 
 The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For mobile verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, using the exact launcher path returned by \`device_open\`. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Prefer these tools and \`agent-device\` for opening and driving devices. Platform tools such as \`xcrun simctl\` and \`adb\` remain available for anything they do not cover, such as builds, logs, or port forwarding. If \`device_list\` reports a platform as unavailable, say so.`;

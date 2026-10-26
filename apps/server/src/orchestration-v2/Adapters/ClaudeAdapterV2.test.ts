@@ -246,15 +246,30 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       ...base,
       agentInstructions: "You are Developer (Writes the code).",
     });
-    assert.isObject(plain.systemPrompt);
-    assert.isObject(withProfile.systemPrompt);
-    if (typeof plain.systemPrompt !== "object" || typeof withProfile.systemPrompt !== "object") {
-      return;
-    }
-    assert.notInclude(plain.systemPrompt.append ?? "", "You are Developer");
+    const appendOf = (prompt: typeof plain.systemPrompt) =>
+      typeof prompt === "object" && !Array.isArray(prompt) && prompt.type === "preset"
+        ? prompt.append
+        : undefined;
+    assert.notInclude(appendOf(plain.systemPrompt) ?? "", "You are Developer");
     assert.equal(
-      withProfile.systemPrompt.append,
-      `${plain.systemPrompt.append}\n\nYou are Developer (Writes the code).`,
+      appendOf(withProfile.systemPrompt),
+      `${appendOf(plain.systemPrompt)}\n\nYou are Developer (Writes the code).`,
+    );
+  });
+
+  it("reopens the Claude process when the profile's rules change, and only then", () => {
+    const policy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      CLAUDE_TEST_RUNTIME_POLICY,
+    );
+    const plain = ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {});
+    assert.equal(ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, undefined), plain);
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, "You are QA."),
+      plain,
+    );
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, "You are QA."),
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, "You are Infra."),
     );
   });
 
