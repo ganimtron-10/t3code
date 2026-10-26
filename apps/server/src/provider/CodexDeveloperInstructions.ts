@@ -23,25 +23,34 @@ export function splitCodexAdditionalContextValue(
 ): ReadonlyArray<string> {
   const pieces: Array<string> = [];
   let current = "";
-  const push = (piece: string) => {
-    const joined = current === "" ? piece : `${current}\n\n${piece}`;
-    if (encoder.encode(joined).length <= maxBytes) {
-      current = joined;
-      return;
+  let currentBytes = 0;
+  for (const paragraph of text.split("\n\n")) {
+    const bytes = encoder.encode(paragraph).length;
+    const joinedBytes = current === "" ? bytes : currentBytes + 2 + bytes;
+    if (joinedBytes <= maxBytes) {
+      current = current === "" ? paragraph : `${current}\n\n${paragraph}`;
+      currentBytes = joinedBytes;
+      continue;
     }
     if (current !== "") pieces.push(current);
     current = "";
-    let chunk = "";
-    for (const char of piece) {
-      if (encoder.encode(chunk + char).length > maxBytes) {
-        pieces.push(chunk);
-        chunk = "";
-      }
-      chunk += char;
+    currentBytes = 0;
+    if (bytes <= maxBytes) {
+      current = paragraph;
+      currentBytes = bytes;
+      continue;
     }
-    current = chunk;
-  };
-  for (const paragraph of text.split("\n\n")) push(paragraph);
+    for (const char of paragraph) {
+      const charBytes = encoder.encode(char).length;
+      if (currentBytes + charBytes > maxBytes) {
+        pieces.push(current);
+        current = "";
+        currentBytes = 0;
+      }
+      current += char;
+      currentBytes += charBytes;
+    }
+  }
   if (current !== "") pieces.push(current);
   return pieces;
 }
