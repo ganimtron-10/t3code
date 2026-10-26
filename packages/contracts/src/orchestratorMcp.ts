@@ -196,7 +196,7 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   agentProfileId: Schema.optional(
     AgentProfileId.annotate({
       description:
-        "Run the child as this team member (an id from t3_team_list profiles, such as developer, qa or infra). The child gets the profile's role rules, and its model and modes unless target, runtimeMode or interactionMode are set. Members cannot start teams of their own.",
+        "Run the child as this team member (an id from t3_team_list profiles, such as developer, qa or infra). The child gets the profile's role rules, and its model and modes unless target, runtimeMode or interactionMode are set. Only a top-level thread can lead a team.",
     }),
   ),
 });

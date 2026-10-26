@@ -248,7 +248,7 @@ const ThreadSendTool = Tool.make("t3_thread_send", {
 
 const TeamListTool = Tool.make("t3_team_list", {
   description:
-    "Needs an agent running inside a T3 thread. List your agent team: the Chief (the thread at the root of this team) and every member delegated with an agentProfileId, with each member's thread id, profile, role and task status, plus the profiles you can delegate to and the team limits. Message a teammate with t3_thread_send to its threadId; when its turn ends, its reply arrives in your thread as a new message. Members cannot start their own teams, and two members can exchange only pairMessageCap messages before they must go through the Chief.",
+    "Needs an agent running inside a T3 thread. List your agent team: the Chief (the thread at the root of this team) and every member delegated with an agentProfileId, with each member's thread id, profile, role and task status, plus the profiles you can delegate to and the team limits. Message a teammate with t3_thread_send to its threadId; when its turn ends, its reply arrives in your thread as a new message. Only a top-level thread can lead a team, and two members can exchange only pairMessageCap messages before they must go through the Chief.",
   success: OrchestratorMcpTeamListResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",

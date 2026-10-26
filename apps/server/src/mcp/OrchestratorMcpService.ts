@@ -2131,6 +2131,9 @@ const make = Effect.gen(function* () {
             ? {
                 providerInstanceId: profile.modelSelection.instanceId,
                 model: profile.modelSelection.model,
+                ...(profile.modelSelection.options === undefined
+                  ? {}
+                  : { options: profile.modelSelection.options }),
               }
             : undefined),
         providers,

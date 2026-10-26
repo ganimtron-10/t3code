@@ -31,6 +31,7 @@ const member = (id: string, profile: string | undefined, parent: ThreadId | null
   }) as unknown as OrchestrationV2AppThread;
 
 const developer = member("thread:developer", "developer");
+const chief = member("thread:chief", "chief", null);
 const qa = member("thread:qa", "qa");
 
 const message = (fields: Partial<OrchestrationV2ConversationMessage>) =>
@@ -47,12 +48,13 @@ const runEvent = (status: string) =>
   ({
     type: "run.updated",
     threadId: qa.id,
-    payload: { id: runId, status, userMessageId: MessageId.make("message:ask") },
+    payload: { id: runId, status, userMessageId: MessageId.make("message:chief-task") },
   }) as unknown as OrchestrationV2DomainEvent;
 
 function handleWith(input: {
   readonly sender: OrchestrationV2AppThread;
   readonly trigger: Partial<OrchestrationV2ConversationMessage>;
+  readonly others?: ReadonlyArray<OrchestrationV2AppThread>;
   readonly answer?: string;
   readonly status?: string;
 }) {
@@ -69,12 +71,20 @@ function handleWith(input: {
     ),
     Layer.provide(
       Layer.mock(ProjectionStore.ProjectionStoreV2)({
-        getThread: () => Effect.succeed(input.sender),
+        getThread: (id) =>
+          Effect.succeed(
+            [input.sender, ...(input.others ?? []), chief].find((thread) => thread.id === id)!,
+          ),
         getThreadRecords: () =>
           Effect.succeed({
             thread: qa,
             messages: [
+              // The Chief's task started the run; the sibling's message steered in.
+              message({ id: MessageId.make("message:chief-task"), senderThreadId: chiefId }),
               message({ id: MessageId.make("message:ask"), ...input.trigger }),
+              ...(input.others ?? []).map((other) =>
+                message({ id: MessageId.make(`message:${other.id}`), senderThreadId: other.id }),
+              ),
               ...(input.answer === undefined
                 ? []
                 : [
@@ -95,6 +105,22 @@ function handleWith(input: {
     return dispatched;
   }).pipe(Effect.provide(layer));
 }
+
+it.effect("answers every sibling whose message steered into the run, once each", () =>
+  Effect.gen(function* () {
+    const infra = member("thread:infra", "infra");
+    const dispatched = yield* handleWith({
+      sender: developer,
+      trigger: { senderThreadId: developer.id },
+      others: [infra],
+      answer: "Done.",
+    });
+    assert.deepEqual(
+      dispatched.map((command) => (command as { threadId: string }).threadId),
+      [developer.id, infra.id],
+    );
+  }),
+);
 
 it.effect("queues a sibling's answer back to the member that asked", () =>
   Effect.gen(function* () {
@@ -134,7 +160,7 @@ it.effect("sends no reply for replies, the Chief, threads without a profile, or 
         sender: developer,
         trigger: { senderThreadId: developer.id, creationSource: "server" as const },
       },
-      { sender: member("thread:chief", "chief", null), trigger: { senderThreadId: chiefId } },
+      { sender: chief, trigger: { senderThreadId: chiefId } },
       {
         sender: member("thread:plain", undefined),
         trigger: { senderThreadId: ThreadId.make("thread:plain") },

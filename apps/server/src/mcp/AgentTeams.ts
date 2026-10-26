@@ -45,18 +45,15 @@ export function countPairMessages(left: ThreadWithMessages, right: ThreadWithMes
   return sent(right, left.thread) + sent(left, right.thread);
 }
 
-/** A profiled thread delegated by another thread is a member, and members cannot start teams. */
-export function isTeamMember(thread: OrchestrationV2AppThread): boolean {
-  return thread.agentProfileId !== undefined && thread.lineage.relationshipToParent === "subagent";
-}
-
 /** Why a thread may not add another profiled member, or undefined when it may. */
 export function teamDelegationRejection(
   parent: OrchestrationV2AppThread,
   activeMembers: number,
 ): string | undefined {
-  if (isTeamMember(parent)) {
-    return `Team members cannot start teams of their own. Ask your Chief (thread ${parent.lineage.rootThreadId}) with t3_thread_send instead.`;
+  // Any delegated thread, profiled or not, would otherwise nest a second team
+  // that t3_team_list on the root cannot see.
+  if (parent.lineage.relationshipToParent === "subagent") {
+    return `Only a top-level thread can lead a team, and this thread was delegated. Ask your Chief (thread ${parent.lineage.rootThreadId}) with t3_thread_send instead.`;
   }
   if (activeMembers >= TEAM_MAX_MEMBERS) {
     return `This team already has ${TEAM_MAX_MEMBERS} active members. Wait for one to finish, or stop one with task_cancel, before adding another.`;

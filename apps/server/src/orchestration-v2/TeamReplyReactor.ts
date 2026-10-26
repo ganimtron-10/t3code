@@ -14,8 +14,8 @@ const MAX_REPLY_CHARS = 8_000;
 
 /**
  * Parent and child already wake each other through delegated task results.
- * Team siblings have no such link, so when a member's turn that another member
- * started with t3_thread_send ends, its answer is queued back to the sender.
+ * Team siblings have no such link, so when a member's turn that took another
+ * member's t3_thread_send message ends, its answer is queued back to the sender.
  * Replies are server-sourced, so a reply never asks for another reply.
  */
 export class TeamReplyReactor extends Context.Service<
@@ -36,26 +36,24 @@ const make = Effect.gen(function* () {
       if (event.type !== "run.updated") return;
       const run = event.payload;
       if (run.status !== "completed" && run.status !== "failed") return;
-      const recipient = yield* projections.getThreadRecords(event.threadId, ["messages"]);
-      const trigger = recipient.messages.find((message) => message.id === run.userMessageId);
-      if (
-        trigger === undefined ||
-        trigger.createdBy !== "agent" ||
-        trigger.creationSource !== "mcp" ||
-        trigger.senderThreadId === undefined
-      ) {
-        return;
-      }
-      const sender = yield* projections.getThread(trigger.senderThreadId);
-      if (
-        !areTeamSiblings(sender, recipient.thread) ||
-        sender.archivedAt !== null ||
-        sender.deletedAt !== null
-      ) {
-        return;
-      }
+      // Only this run's messages: a sibling's message may have started the
+      // run, been queued into it, or steered into it while it was running.
+      const recipient = yield* projections.getThreadRecords(event.threadId, ["messages"], {
+        messageRunIds: [run.id],
+      });
+      const senderIds = new Set(
+        recipient.messages.flatMap((message) =>
+          message.role === "user" &&
+          message.createdBy === "agent" &&
+          message.creationSource === "mcp" &&
+          message.senderThreadId !== undefined
+            ? [message.senderThreadId]
+            : [],
+        ),
+      );
+      if (senderIds.size === 0) return;
       const answer = recipient.messages
-        .findLast((message) => message.runId === run.id && message.role === "assistant")
+        .findLast((message) => message.role === "assistant")
         ?.text.trim();
       const readHint = `Read the full thread with t3_thread_read on thread ${recipient.thread.id}.`;
       const text =
@@ -66,18 +64,28 @@ const make = Effect.gen(function* () {
             : answer.length > MAX_REPLY_CHARS
               ? `Reply to your message (cut to ${MAX_REPLY_CHARS} characters; ${readHint}):\n\n${answer.slice(0, MAX_REPLY_CHARS)}`
               : `Reply to your message:\n\n${answer}`;
-      yield* engine.dispatch({
-        type: "message.dispatch",
-        commandId: CommandId.make(`server:team-reply:${run.id}`),
-        threadId: sender.id,
-        messageId: MessageId.make(`message:team-reply:${run.id}`),
-        senderThreadId: recipient.thread.id,
-        text,
-        attachments: [],
-        dispatchMode: { type: "queue_after_active" },
-        createdBy: "agent",
-        creationSource: "server",
-      });
+      for (const senderId of senderIds) {
+        const sender = yield* projections.getThread(senderId);
+        if (
+          !areTeamSiblings(sender, recipient.thread) ||
+          sender.archivedAt !== null ||
+          sender.deletedAt !== null
+        ) {
+          continue;
+        }
+        yield* engine.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`server:team-reply:${run.id}:${sender.id}`),
+          threadId: sender.id,
+          messageId: MessageId.make(`message:team-reply:${run.id}:${sender.id}`),
+          senderThreadId: recipient.thread.id,
+          text,
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "agent",
+          creationSource: "server",
+        });
+      }
     },
     (effect, event) =>
       effect.pipe(

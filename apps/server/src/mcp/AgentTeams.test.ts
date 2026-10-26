@@ -135,8 +135,11 @@ describe("teamDelegationRejection", () => {
     assert.include(teamDelegationRejection(chief, TEAM_MAX_MEMBERS), "active members");
   });
 
-  it("stops members from starting their own team", () => {
-    assert.include(teamDelegationRejection(developer, 0), "cannot start teams");
-    assert.isUndefined(teamDelegationRejection(thread("thread:helper", { parent: chiefId }), 0));
+  it("stops any delegated thread, profiled or not, from starting a team", () => {
+    assert.include(teamDelegationRejection(developer, 0), "Only a top-level thread");
+    assert.include(
+      teamDelegationRejection(thread("thread:helper", { parent: chiefId }), 0),
+      "Only a top-level thread",
+    );
   });
 });
