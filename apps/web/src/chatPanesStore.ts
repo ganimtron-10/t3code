@@ -7,12 +7,15 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import {
   clampPaneRatio,
   collectLeaves,
+  equalizePanes,
   findLeafByThread,
   findNode,
+  isRestorableLayout,
   movePane,
   removePane,
   resolveDropZone,
   resolveEdgeDropZone,
+  setPaneCollapsed,
   setPaneRatio,
   splitPane,
   type ChatPaneId,
@@ -49,6 +52,7 @@ interface ChatPanesState {
   root: ChatPaneNode | null;
   drag: ChatPaneDrag | null;
   setRatio: (splitId: ChatPaneId, ratio: number) => void;
+  equalize: () => void;
 }
 
 const NodeSchema: Schema.Codec<ChatPaneNode> = Schema.Union([
@@ -56,6 +60,7 @@ const NodeSchema: Schema.Codec<ChatPaneNode> = Schema.Union([
     kind: Schema.Literal("leaf"),
     id: Schema.String,
     threadRef: Schema.Struct({ environmentId: EnvironmentId, threadId: ThreadId }),
+    collapsed: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     kind: Schema.Literal("split"),
@@ -81,6 +86,12 @@ export const useChatPanesStore = create<ChatPanesState>()(
           const root = setPaneRatio(state.root, splitId, ratio);
           return root === state.root ? state : { root };
         }),
+      equalize: () =>
+        set((state) => {
+          if (!state.root) return state;
+          const root = equalizePanes(state.root);
+          return root === state.root ? state : { root };
+        }),
     }),
     {
       name: "t3code:chat-panes:v1",
@@ -91,7 +102,10 @@ export const useChatPanesStore = create<ChatPanesState>()(
       merge: (persisted, current) => {
         try {
           const { root } = decodePersisted(persisted);
-          return { ...current, root: root?.kind === "split" ? clampRatios(root) : null };
+          return {
+            ...current,
+            root: root?.kind === "split" && isRestorableLayout(root) ? clampRatios(root) : null,
+          };
         } catch {
           return current;
         }
@@ -202,10 +216,57 @@ export function closePane(
   return closedRoute && rest ? collectLeaves(rest)[0]!.threadRef : null;
 }
 
+/** Closes the pane showing `threadRef`, returning the thread the route should move to. */
+export function closeThreadPane(
+  threadRef: ScopedThreadRef,
+  routeThreadRef: ScopedThreadRef | null,
+): ScopedThreadRef | null {
+  const leaf = findLeafByThread(useChatPanesStore.getState().root, threadRef);
+  return leaf ? closePane(leaf.id, routeThreadRef) : null;
+}
+
 /** Closes the pane showing the route thread, returning the pane the route should move to. */
 export function closeRouteThreadPane(routeThreadRef: ScopedThreadRef): ScopedThreadRef | null {
-  const leaf = findLeafByThread(useChatPanesStore.getState().root, routeThreadRef);
-  return leaf ? closePane(leaf.id, routeThreadRef) : null;
+  return closeThreadPane(routeThreadRef, routeThreadRef);
+}
+
+export function isThreadInPane(threadRef: ScopedThreadRef): boolean {
+  return findLeafByThread(useChatPanesStore.getState().root, threadRef) !== null;
+}
+
+/**
+ * Folds a pane to its header or unfolds it. The focused pane hands focus to
+ * another open pane before folding, so this returns the thread the route
+ * should move to; with no other open pane it stays unfolded.
+ */
+export function togglePaneCollapsed(
+  paneId: ChatPaneId,
+  routeThreadRef: ScopedThreadRef | null,
+): ScopedThreadRef | null {
+  const { root } = useChatPanesStore.getState();
+  const leaf = root ? findNode(root, paneId) : null;
+  if (!root || leaf?.kind !== "leaf") return null;
+  if (leaf.collapsed) {
+    useChatPanesStore.setState({ root: setPaneCollapsed(root, paneId, false) });
+    return null;
+  }
+  const focused =
+    routeThreadRef !== null && scopedThreadKey(leaf.threadRef) === scopedThreadKey(routeThreadRef);
+  const next = focused
+    ? collectLeaves(root).find((other) => other.id !== paneId && !other.collapsed)
+    : undefined;
+  if (focused && !next) return null;
+  useChatPanesStore.setState({ root: setPaneCollapsed(root, paneId, true) });
+  return next?.threadRef ?? null;
+}
+
+/** Unfolds the pane showing `threadRef`, so a thread that takes focus is never left folded. */
+export function expandThreadPane(threadRef: ScopedThreadRef) {
+  const { root } = useChatPanesStore.getState();
+  const leaf = findLeafByThread(root, threadRef);
+  if (root && leaf?.collapsed) {
+    useChatPanesStore.setState({ root: setPaneCollapsed(root, leaf.id, false) });
+  }
 }
 
 export function startChatPaneDrag(threadRef: ScopedThreadRef, sourcePaneId: ChatPaneId | null) {

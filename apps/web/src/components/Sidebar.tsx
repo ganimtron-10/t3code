@@ -7,6 +7,7 @@ import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
   canOpenThreadInSplit,
   commitChatPaneDrop,
+  isThreadInPane,
   openThreadInSplit,
   endChatPaneDrag,
   hoverChatPaneDrop,
@@ -3266,7 +3267,10 @@ export default function Sidebar() {
       const threadKey = scopedThreadKey(threadRef);
       if (settlingThreadKeysRef.current.has(threadKey)) return;
       settlingThreadKeysRef.current.add(threadKey);
-      const navigateAfterSettle = planForwardNavigation(threadKey, opts.coSettlingKeys);
+      // Settling closes the thread's pane, which already hands focus to a neighbour.
+      const navigateAfterSettle = isThreadInPane(threadRef)
+        ? null
+        : planForwardNavigation(threadKey, opts.coSettlingKeys);
       const result = await settleThread(threadRef);
       settlingThreadKeysRef.current.delete(threadKey);
       if (result._tag === "Failure") {
@@ -3805,7 +3809,9 @@ export default function Sidebar() {
       switch (plan.kind) {
         case "settle": {
           settlingThreadKeysRef.current.add(activeKey);
-          const navigateAfterSettle = planForwardNavigation(activeKey);
+          const navigateAfterSettle = isThreadInPane(threadRef)
+            ? null
+            : planForwardNavigation(activeKey);
           const settled = await run(settleThread(threadRef), "Failed to settle thread").finally(
             () => settlingThreadKeysRef.current.delete(activeKey),
           );

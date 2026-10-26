@@ -15,6 +15,8 @@ export interface ChatPaneLeaf {
   readonly kind: "leaf";
   readonly id: ChatPaneId;
   readonly threadRef: ScopedThreadRef;
+  /** Shown as its header only; saved with the layout. */
+  readonly collapsed?: boolean;
 }
 
 export interface ChatPaneSplit {
@@ -93,6 +95,32 @@ export function splitPane(
   return first === root.first && second === root.second ? root : { ...root, first, second };
 }
 
+export function setPaneCollapsed(
+  root: ChatPaneNode,
+  paneId: ChatPaneId,
+  collapsed: boolean,
+): ChatPaneNode {
+  if (root.kind === "leaf") {
+    if (root.id !== paneId || (root.collapsed === true) === collapsed) return root;
+    return collapsed
+      ? { ...root, collapsed: true }
+      : { kind: "leaf", id: root.id, threadRef: root.threadRef };
+  }
+  const first = setPaneCollapsed(root.first, paneId, collapsed);
+  const second = setPaneCollapsed(root.second, paneId, collapsed);
+  return first === root.first && second === root.second ? root : { ...root, first, second };
+}
+
+/**
+ * Whether every pane in `node` is folded. The focused thread's pane always
+ * shows, so it never counts as folded even when its saved flag says so.
+ */
+export function isPaneFolded(node: ChatPaneNode, focusedThreadKey: string): boolean {
+  return collectLeaves(node).every(
+    (leaf) => leaf.collapsed === true && scopedThreadKey(leaf.threadRef) !== focusedThreadKey,
+  );
+}
+
 /** Removes a node. Its sibling takes the parent's slot; removing the root empties the layout. */
 export function removePane(root: ChatPaneNode, paneId: ChatPaneId): ChatPaneNode | null {
   if (root.id === paneId) return null;
@@ -113,6 +141,53 @@ export function setPaneRatio(root: ChatPaneNode, splitId: ChatPaneId, ratio: num
   const first = setPaneRatio(root.first, splitId, ratio);
   const second = setPaneRatio(root.second, splitId, ratio);
   return first === root.first && second === root.second ? root : { ...root, first, second };
+}
+
+/** More panes than this can't be usable, so a saved layout beyond it is tampered or corrupt. */
+const MAX_RESTORED_PANES = 32;
+
+/**
+ * Whether a decoded layout is safe to render: a bounded number of panes, and
+ * no node id or thread used twice. Walks iteratively so a hostile depth can't
+ * overflow the stack before it is rejected.
+ */
+export function isRestorableLayout(root: ChatPaneNode): boolean {
+  const ids = new Set<ChatPaneId>();
+  const threads = new Set<string>();
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (ids.has(node.id)) return false;
+    ids.add(node.id);
+    if (node.kind === "split") {
+      stack.push(node.first, node.second);
+      continue;
+    }
+    const key = scopedThreadKey(node.threadRef);
+    if (threads.has(key) || threads.size >= MAX_RESTORED_PANES) return false;
+    threads.add(key);
+  }
+  return true;
+}
+
+/** How many panes sit side by side along `direction`'s axis inside `node`. */
+export function paneSpan(node: ChatPaneNode, direction: SplitDirection): number {
+  if (node.kind === "leaf") return 1;
+  const first = paneSpan(node.first, direction);
+  const second = paneSpan(node.second, direction);
+  return node.direction === direction ? first + second : Math.max(first, second);
+}
+
+/** Sizes every split so the panes along each axis get equal space. */
+export function equalizePanes(root: ChatPaneNode): ChatPaneNode {
+  if (root.kind === "leaf") return root;
+  const firstSpan = paneSpan(root.first, root.direction);
+  const ratio = clampPaneRatio(firstSpan / (firstSpan + paneSpan(root.second, root.direction)));
+  const first = equalizePanes(root.first);
+  const second = equalizePanes(root.second);
+  return ratio === root.ratio && first === root.first && second === root.second
+    ? root
+    : { ...root, ratio, first, second };
 }
 
 /** Moves pane `paneId` beside `targetId`. A drop on itself, or on a vanished target, is a no-op. */
