@@ -43,6 +43,7 @@ import {
   ProviderOptionSelectionValue,
 } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { AgentProfileId } from "./agentProfile.ts";
 
 const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)).annotate({
   description: "Complete task or message text for the target agent.",
@@ -192,6 +193,12 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
     }),
   ),
   interactionMode: Schema.optional(OrchestratorMcpInteractionMode),
+  agentProfileId: Schema.optional(
+    AgentProfileId.annotate({
+      description:
+        "Run the child as this team member (an id from t3_team_list profiles, such as developer, qa or infra). The child gets the profile's role rules, and its model and modes unless target, runtimeMode or interactionMode are set. Members cannot start teams of their own.",
+    }),
+  ),
 });
 export type OrchestratorMcpDelegateTaskInput = typeof OrchestratorMcpDelegateTaskInput.Type;
 
@@ -472,6 +479,28 @@ export const OrchestratorMcpThreadSendResult = Schema.Struct({
   delivery: Schema.Literals(["started", "queued", "steered", "restarted"]),
 });
 export type OrchestratorMcpThreadSendResult = typeof OrchestratorMcpThreadSendResult.Type;
+
+export const OrchestratorMcpTeamMember = Schema.Struct({
+  threadId: ThreadId,
+  title: Schema.String,
+  agentProfileId: Schema.NullOr(AgentProfileId),
+  name: Schema.NullOr(Schema.String),
+  role: Schema.NullOr(Schema.String),
+  isChief: Schema.Boolean,
+  status: Schema.String,
+});
+export type OrchestratorMcpTeamMember = typeof OrchestratorMcpTeamMember.Type;
+
+export const OrchestratorMcpTeamListResult = Schema.Struct({
+  rootThreadId: ThreadId,
+  members: Schema.Array(OrchestratorMcpTeamMember),
+  profiles: Schema.Array(
+    Schema.Struct({ id: AgentProfileId, name: Schema.String, role: Schema.String }),
+  ),
+  maxMembers: Schema.Number,
+  pairMessageCap: Schema.Number,
+});
+export type OrchestratorMcpTeamListResult = typeof OrchestratorMcpTeamListResult.Type;
 
 export const OrchestratorMcpThreadWaitInput = Schema.Struct({
   threadId: ThreadId,

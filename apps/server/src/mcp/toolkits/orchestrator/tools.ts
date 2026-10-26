@@ -26,6 +26,7 @@ import {
   OrchestratorMcpThreadReadResult,
   OrchestratorMcpThreadSendInput,
   OrchestratorMcpThreadSendResult,
+  OrchestratorMcpTeamListResult,
   OrchestratorMcpThreadWaitInput,
   OrchestratorMcpThreadWaitResult,
   ThreadMetadataMcpUpdateInput,
@@ -245,6 +246,19 @@ const ThreadSendTool = Tool.make("t3_thread_send", {
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
 
+const TeamListTool = Tool.make("t3_team_list", {
+  description:
+    "Needs an agent running inside a T3 thread. List your agent team: the Chief (the thread at the root of this team) and every member delegated with an agentProfileId, with each member's thread id, profile, role and task status, plus the profiles you can delegate to and the team limits. Message a teammate with t3_thread_send to its threadId; when its turn ends, its reply arrives in your thread as a new message. Members cannot start their own teams, and two members can exchange only pairMessageCap messages before they must go through the Chief.",
+  success: OrchestratorMcpTeamListResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "List the agent team")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
 const ThreadWaitTool = Tool.make("t3_thread_wait", {
   description:
     "Wait for a T3 thread run to reach a terminal durable state. Without runId, the latest run at call time is selected; an idle thread returns immediately. Timeout does not interrupt work, so call again or use t3_thread_read/list after timedOut=true. Waiting reports status only and does not acknowledge a delegated result.",
@@ -289,4 +303,5 @@ export const OrchestratorToolkit = Toolkit.make(
   ThreadSendTool,
   ThreadWaitTool,
   ThreadInterruptTool,
+  TeamListTool,
 );

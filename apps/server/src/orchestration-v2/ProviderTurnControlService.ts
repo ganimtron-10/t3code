@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema";
 
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { agentSenderHeader, withAgentSenderHeader } from "./AgentSenderHeader.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
 const yieldToRuntime = Effect.yieldNow.pipe(
@@ -353,6 +354,19 @@ export const layer: Layer.Layer<
               cause: "The persisted steering message or target run is missing.",
             });
           }
+          // Settings are not a dependency here, so the header names the profile by id.
+          const senderHeader =
+            message.createdBy === "agent" &&
+            message.senderThreadId !== undefined &&
+            message.senderThreadId !== input.threadId
+              ? agentSenderHeader({
+                  message,
+                  recipient: yield* projections.getThread(input.threadId),
+                  sender: yield* projections
+                    .getThread(message.senderThreadId)
+                    .pipe(Effect.orElseSucceed(() => undefined)),
+                })
+              : undefined;
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
@@ -361,10 +375,13 @@ export const layer: Layer.Layer<
               providerTurnId: loaded.providerTurn.id,
               message: {
                 messageId: message.id,
-                text: projectComposerContextForProvider({
-                  text: message.text,
-                  records: message.context?.records ?? [],
-                }),
+                text: withAgentSenderHeader(
+                  projectComposerContextForProvider({
+                    text: message.text,
+                    records: message.context?.records ?? [],
+                  }),
+                  senderHeader,
+                ),
                 attachments: message.attachments,
                 createdBy: message.createdBy,
                 creationSource: message.creationSource,
