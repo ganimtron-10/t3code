@@ -94,6 +94,7 @@ import {
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
+import { isInBackgroundChatPane } from "~/lib/chatPaneFocus";
 
 const MIN_DRAWER_HEIGHT = 180;
 const MAX_DRAWER_HEIGHT_RATIO = 0.75;
@@ -1112,7 +1113,7 @@ function TerminalSessionViewport({
   // Each new request focuses again, even when nothing else changed.
   const focusRequest = autoFocus && canOperateTerminal && visible ? focusRequestId : null;
   useEffect(() => {
-    if (focusRequest === null) return;
+    if (focusRequest === null || isInBackgroundChatPane(containerRef.current)) return;
     (terminalRef.current ?? containerRef.current)?.focus();
   }, [focusRequest]);
 

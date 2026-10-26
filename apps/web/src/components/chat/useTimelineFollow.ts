@@ -59,6 +59,8 @@ interface TimelineFollowInput {
   readonly timelineEntries: ReadonlyArray<TimelineEntry>;
   readonly timelineAnchorMessageId: MessageId | null;
   readonly setTimelineAnchor: Dispatch<SetStateAction<TimelineAnchor>>;
+  /** False while this view is a background split pane; keys aimed at the page belong to the focused one. */
+  readonly inputOwnerRef: { readonly current: boolean };
 }
 
 /**
@@ -83,6 +85,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     timelineEntries,
     timelineAnchorMessageId,
     setTimelineAnchor,
+    inputOwnerRef,
   } = input;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const isAtEndRef = useRef(true);
@@ -356,8 +359,8 @@ export function useTimelineFollow(input: TimelineFollowInput) {
           if (
             !(event.target instanceof Node) ||
             (!scrollNode.contains(event.target) &&
-              event.target !== document.body &&
-              event.target !== document.documentElement) ||
+              (!inputOwnerRef.current ||
+                (event.target !== document.body && event.target !== document.documentElement))) ||
             event.defaultPrevented ||
             event.isComposing ||
             event.altKey ||
@@ -461,6 +464,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A thread switch remounts the list's scroll node, so the listeners reattach.
     activeThreadId,
     composerRef,
+    inputOwnerRef,
     isTimelineAtLogicalEndStable,
     legendListRef,
     timelineRealContentOverflowsViewportStable,

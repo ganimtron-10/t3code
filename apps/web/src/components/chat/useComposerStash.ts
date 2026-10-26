@@ -1,4 +1,5 @@
 import type { ChatComposerProps } from "./ChatComposer";
+import { isInBackgroundChatPane } from "~/lib/chatPaneFocus";
 import {
   type ComposerContextRecord,
   type EnvironmentId,
@@ -87,6 +88,7 @@ export function useComposerStash(input: {
   readonly attachmentTargetKeyRef: RefObject<string>;
   readonly composerDraftTargetKeyRef: RefObject<string>;
   readonly composerEditorRef: RefObject<ComposerPromptEditorHandle | null>;
+  readonly composerFormRef: RefObject<HTMLFormElement | null>;
   readonly isRevertingCheckpointRef: RefObject<boolean>;
   readonly pendingThreadImportsRef: RefObject<Map<string, number>>;
   readonly setComposerCursor: Dispatch<SetStateAction<number>>;
@@ -121,6 +123,7 @@ export function useComposerStash(input: {
     attachmentTargetKeyRef,
     composerDraftTargetKeyRef,
     composerEditorRef,
+    composerFormRef,
     isRevertingCheckpointRef,
     pendingThreadImportsRef,
     setComposerCursor,
@@ -704,6 +707,8 @@ export function useComposerStash(input: {
         },
       });
       if (command !== "composer.stash") return;
+      // Every pane's composer listens on window; only the focused pane's stashes.
+      if (isInBackgroundChatPane(composerFormRef.current)) return;
       // Always claim the shortcut so the browser save dialog never opens,
       // even when the composer is in a state that can't stash.
       event.preventDefault();
@@ -724,6 +729,7 @@ export function useComposerStash(input: {
     return () => window.removeEventListener("keydown", handler, true);
   }, [
     activePendingProgress,
+    composerFormRef,
     isComposerModelPickerOpen,
     keybindings,
     pendingUserInputs.length,

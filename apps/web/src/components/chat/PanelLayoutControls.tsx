@@ -182,11 +182,18 @@ export function WorkspaceTitlebarControls(props: {
   readonly animationsActive: boolean;
   readonly maximized: boolean;
   readonly onToggleMaximized: () => void;
+  /** Panes share the window, so their controls stay in their own header. */
+  readonly inPane?: boolean;
   readonly children: ReactNode;
 }) {
   return (
     <div
-      className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]"
+      className={cn(
+        "pointer-events-none z-50 flex items-center gap-1 [-webkit-app-region:no-drag]",
+        props.inPane
+          ? "order-last ml-auto h-full shrink-0"
+          : "fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] mr-px h-[var(--workspace-topbar-height)]",
+      )}
       data-workspace-titlebar-controls
     >
       {props.showMaximizeControl ? (

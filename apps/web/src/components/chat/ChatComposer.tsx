@@ -2315,6 +2315,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     attachmentTargetKeyRef,
     composerDraftTargetKeyRef,
     composerEditorRef,
+    composerFormRef,
     isRevertingCheckpointRef,
     pendingThreadImportsRef,
     setComposerCursor,

@@ -2,6 +2,16 @@ import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
+  canOpenThreadInSplit,
+  commitChatPaneDrop,
+  isThreadInPane,
+  openThreadInSplit,
+  endChatPaneDrag,
+  hoverChatPaneDrop,
+  startChatPaneDrag,
+  useChatPanesStore,
+} from "../chatPanesStore";
+import {
   dropThreadContext,
   endThreadContextDrag,
   moveThreadContextDrag as moveThreadContextDragGhost,
@@ -1385,7 +1395,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       const threadKey = scopedThreadKey(threadRef);
       if (settlingThreadKeysRef.current.has(threadKey)) return;
       settlingThreadKeysRef.current.add(threadKey);
-      const navigateAfterSettle = planForwardNavigation(threadKey, opts.coSettlingKeys);
+      // Settling closes the thread's pane, which already hands focus to a neighbour.
+      const navigateAfterSettle = isThreadInPane(threadRef)
+        ? null
+        : planForwardNavigation(threadKey, opts.coSettlingKeys);
       const result = await settleThread(threadRef);
       settlingThreadKeysRef.current.delete(threadKey);
       if (result._tag === "Failure") {
@@ -1475,6 +1488,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     dragSensorRef.current = null;
     contextDragKeyRef.current = null;
     endThreadContextDrag();
+    endChatPaneDrag();
     if (started) {
       listMotionRef.current?.release();
       setDragState(null);
@@ -1509,17 +1523,28 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
     if (!contextDrag) {
       endThreadContextDrag();
+      hoverChatPaneDrop(null);
       return false;
     }
     const threads = contextDragThreads();
     const title =
       threadByKeyRef.current.get(contextDragKeyRef.current ?? "")?.title.trim() || "Thread";
-    moveThreadContextDragGhost(point, { title, count: threads.length });
+    const overComposer = moveThreadContextDragGhost(point, { title, count: threads.length });
+    // Outside a composer, the dragged thread can open as a split pane instead.
+    // A pane shows one thread, so a multi-thread drag only offers composer drops.
+    const paneThread = threads.length === 1 ? threads[0]! : null;
+    if (paneThread && useChatPanesStore.getState().drag === null) {
+      startChatPaneDrag(paneThread, null);
+    }
+    hoverChatPaneDrop(overComposer || !paneThread ? null : point);
     return true;
   };
   const dropThreadContextDrag = (point: { x: number; y: number }) => {
     if (!pointerOutsideThreadList(point)) return false;
-    dropThreadContext(point, contextDragThreads());
+    if (!dropThreadContext(point, contextDragThreads())) {
+      const opened = commitChatPaneDrop(parseScopedThreadKey(routeThreadKeyRef.current ?? ""));
+      if (opened) void navigateToThread(opened);
+    }
     return true;
   };
   // useSensor memoizes on the options object; a fresh one each render rebuilds
@@ -1912,7 +1937,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       switch (plan.kind) {
         case "settle": {
           settlingThreadKeysRef.current.add(activeKey);
-          const navigateAfterSettle = planForwardNavigation(activeKey);
+          const navigateAfterSettle = isThreadInPane(threadRef)
+            ? null
+            : planForwardNavigation(activeKey);
           const settled = await run(settleThread(threadRef), "Failed to settle thread").finally(
             () => settlingThreadKeysRef.current.delete(activeKey),
           );
@@ -2374,6 +2401,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 threadRef.environmentId,
                 AuthOrchestrationOperateScope,
               ),
+              canOpenInSplit:
+                !isMobile &&
+                canOpenThreadInSplit(
+                  parseScopedThreadKey(routeThreadKeyRef.current ?? ""),
+                  threadRef,
+                ),
               branch: thread.branch ?? null,
               projectFilter: threadProjectGroup
                 ? {
@@ -2411,6 +2444,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         switch (clicked.value) {
+          case "open-in-split":
+            if (openThreadInSplit(parseScopedThreadKey(routeThreadKeyRef.current ?? ""), threadRef))
+              void navigateToThread(threadRef);
+            return;
           case "filter-by-project":
             if (threadProjectGroup) {
               setProjectScopeKey(
