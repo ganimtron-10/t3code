@@ -1566,7 +1566,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const dropThreadContextDrag = (point: { x: number; y: number }) => {
     if (!pointerOutsideThreadList(point)) return false;
     if (!dropThreadContext(point, contextDragThreads())) {
-      const opened = commitChatPaneDrop(parseScopedThreadKey(routeThreadKeyRef.current ?? ""));
+      const opened = commitChatPaneDrop(parseScopedThreadKey(readRouteThreadKey(router) ?? ""));
       if (opened) void navigateToThread(opened);
     }
     return true;
@@ -2411,7 +2411,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canOpenInSplit:
                 !isMobile &&
                 canOpenThreadInSplit(
-                  parseScopedThreadKey(routeThreadKeyRef.current ?? ""),
+                  parseScopedThreadKey(readRouteThreadKey(router) ?? ""),
                   threadRef,
                 ),
               branch: thread.branch ?? null,
@@ -2455,7 +2455,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         }
         switch (clicked.value) {
           case "open-in-split":
-            if (openThreadInSplit(parseScopedThreadKey(routeThreadKeyRef.current ?? ""), threadRef))
+            if (
+              openThreadInSplit(parseScopedThreadKey(readRouteThreadKey(router) ?? ""), threadRef)
+            )
               void navigateToThread(threadRef);
             return;
           case "filter-by-project":

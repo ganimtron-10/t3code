@@ -185,7 +185,6 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
       }}
     >
       <CollapsibleTrigger
-        ref={toggleRef}
         render={<ComposerBanner.Row render={<button type="button" />} />}
         title={
           isCollapsed ? "Show the question and its options" : "Hide the question and its options"
