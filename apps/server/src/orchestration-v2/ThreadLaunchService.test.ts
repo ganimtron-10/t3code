@@ -524,21 +524,6 @@ it.effect("records the agent profile only on threads launched with one", () => {
   }).pipe(Effect.provide(harness.layer));
 });
 
-function waitUntil<E, R>(predicate: () => Effect.Effect<boolean, E, R>): Effect.Effect<void, E, R> {
-  return Effect.gen(function* () {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (yield* predicate()) return;
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            setImmediate(resolve);
-          }),
-      );
-    }
-    assert.fail("Condition was not reached before timeout.");
-  });
-}
-
 it.effect("gives a delegated child the requested team profile and nothing otherwise", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
@@ -548,11 +533,6 @@ it.effect("gives a delegated child the requested team profile and nothing otherw
       ...launchInput({ command: "command:chief", thread: "thread:chief", message: "Lead" }),
       agentProfileId: AgentProfileId.make("chief"),
     });
-    yield* waitUntil(() =>
-      threads
-        .getThreadProjection(chief.threadId)
-        .pipe(Effect.map((projection) => projection.runs[0]?.rootNodeId != null)),
-    );
     const run = (yield* threads.getThreadProjection(chief.threadId)).runs[0]!;
     for (const [suffix, agentProfileId] of [
       ["qa", AgentProfileId.make("qa")],
