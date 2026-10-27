@@ -58,7 +58,6 @@ export function ThreadRouteView({
   );
   // With panes open, a thread or new draft from outside them joins the focused pane as a tab.
   const panesEnabled = !background && !isMobileViewport;
-  const hasPaneLayout = useChatPanesStore((state) => panesEnabled && state.root !== null);
   const draftPaneId = useChatPanesStore((state) =>
     panesEnabled && target.kind === "draft"
       ? (resolveAttachPane(state.root, state.focusedPaneId)?.id ?? null)
@@ -134,8 +133,20 @@ export function ThreadRouteView({
     }
   }, [background, bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
 
+  const attachPaneId = useChatPanesStore((state) =>
+    target.kind === "server" && panesEnabled && paneLayout === null
+      ? (resolveAttachPane(state.root, state.focusedPaneId)?.id ?? null)
+      : null,
+  );
+  const attachLayout = useChatPanesStore((state) => (attachPaneId ? state.root : null));
+  const routeTabJustClosed = useChatPanesStore(
+    (state) =>
+      serverThreadRef !== null && state.detachedThreadKey === scopedThreadKey(serverThreadRef),
+  );
+  const routeThreadShown =
+    renderState === "ready" || (renderState === "loading" && serverThreadShell !== null);
   const attachToPanes =
-    target.kind === "server" && hasPaneLayout && paneLayout === null && renderState === "ready";
+    attachPaneId !== null && attachLayout !== null && routeThreadShown && !routeTabJustClosed;
   // oxlint-disable-next-line t3code/react-effect-budget -- joins the route thread to the pane layout before paint
   useLayoutEffect(() => {
     if (attachToPanes && target.kind === "server") attachThreadToFocusedPane(target.threadRef);
@@ -201,9 +212,37 @@ export function ThreadRouteView({
       );
     }
   } else if (paneLayout) {
-    view = <ChatPanes root={paneLayout} routeThreadRef={target.threadRef} />;
-  } else if (attachToPanes) {
-    // The layout effect above adds it to a pane before this frame paints.
+    view = (
+      <ChatPanes
+        root={paneLayout}
+        routeThreadRef={target.threadRef}
+        routeViewKey={nextHandoffKey?.key}
+      />
+    );
+  } else if (attachToPanes && attachLayout && attachPaneId) {
+    // Shown in its pane already, so the frame before it joins the layout keeps the layout.
+    view = (
+      <ChatPanes
+        root={attachLayout}
+        routeThreadRef={target.threadRef}
+        routeViewKey={nextHandoffKey?.key}
+        draft={{
+          paneId: attachPaneId,
+          view: (
+            <ChatView
+              key={nextHandoffKey?.key}
+              environmentId={target.threadRef.environmentId}
+              threadId={target.threadRef.threadId}
+              routeKind="server"
+              paneMode="focused"
+              reserveTitleBarControlInset={false}
+            />
+          ),
+        }}
+      />
+    );
+  } else if (routeTabJustClosed && attachPaneId !== null) {
+    // The close handler is moving the route to a neighbouring tab.
     view = null;
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (

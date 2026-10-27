@@ -514,16 +514,11 @@ export default function ChatView(props: ChatViewProps) {
         });
   const promptRef = useRef("");
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
+  // Every split pane mounts a composer; only the focused one owns the app-wide
+  // handle the command palette uses, the others keep a handle of their own.
   const sharedComposerRef = useComposerHandleContext();
-  // Every split pane mounts a composer, so each keeps its own handle and the
-  // focused pane publishes it to app-wide callers like the command palette.
   const composerRef =
-    paneMode === undefined ? (sharedComposerRef ?? localComposerRef) : localComposerRef;
-  // oxlint-disable-next-line t3code/react-effect-budget -- publishes the focused pane's composer handle app-wide
-  useLayoutEffect(() => {
-    if (paneMode !== "focused" || !sharedComposerRef) return;
-    sharedComposerRef.current = localComposerRef.current;
-  }, [paneMode, sharedComposerRef]);
+    paneMode === "background" ? localComposerRef : (sharedComposerRef ?? localComposerRef);
   const queuedRunEdit = useQueuedRunEdit({
     environmentId,
     routeThreadRef,

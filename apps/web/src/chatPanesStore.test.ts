@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -29,7 +30,14 @@ const paneOf = (threadId: string) =>
   findLeafByThread(useChatPanesStore.getState().root, ref(threadId))!.id;
 
 describe("chat panes store", () => {
-  beforeEach(() => useChatPanesStore.setState({ root: null, focusedPaneId: null, drag: null }));
+  beforeEach(() =>
+    useChatPanesStore.setState({
+      root: null,
+      focusedPaneId: null,
+      detachedThreadKey: null,
+      drag: null,
+    }),
+  );
 
   it("starts a layout from the thread shown on its own", () => {
     expect(placeThread(ref("a"), ref("b"), { paneId: SOLO_PANE_ID, zone: "left" })).toBe(true);
@@ -148,5 +156,17 @@ describe("chat panes store", () => {
     expect(findLeafByThread(useChatPanesStore.getState().root, ref("a"))!.threadRef).toEqual(
       ref("a"),
     );
+  });
+
+  it("remembers a closed route tab until focus moves on, so it does not rejoin", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    focusThreadPane(ref("b"));
+    attachThreadToFocusedPane(ref("c"));
+    closeThreadPane(ref("c"), ref("c"));
+    expect(useChatPanesStore.getState().detachedThreadKey).toBe(scopedThreadKey(ref("c")));
+    focusThreadPane(ref("b"));
+    expect(useChatPanesStore.getState().detachedThreadKey).toBeNull();
+    closeThreadPane(ref("a"), ref("b"));
+    expect(useChatPanesStore.getState().detachedThreadKey).toBeNull();
   });
 });
