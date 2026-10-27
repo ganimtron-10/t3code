@@ -57,6 +57,11 @@ interface ChatPanesState {
   root: ChatPaneNode | null;
   /** The pane threads opened from outside the layout join as a tab. */
   focusedPaneId: ChatPaneId | null;
+  /**
+   * A route thread whose tab was just closed. The route moves on a beat later,
+   * and until then it must not rejoin the layout as a thread from outside it.
+   */
+  detachedThreadKey: string | null;
   drag: ChatPaneDrag | null;
   setRatio: (splitId: ChatPaneId, ratio: number) => void;
   equalize: () => void;
@@ -92,6 +97,7 @@ export const useChatPanesStore = create<ChatPanesState>()(
     (set) => ({
       root: null,
       focusedPaneId: null,
+      detachedThreadKey: null,
       drag: null,
       setRatio: (splitId, ratio) =>
         set((state) => {
@@ -242,9 +248,12 @@ export function closePane(
   const closing = root ? findNode(root, paneId) : null;
   if (!root || closing?.kind !== "leaf") return null;
   const rest = removePane(root, paneId);
-  useChatPanesStore.setState({ root: normalize(rest) });
   const closedRoute =
     routeThreadRef !== null && leafThreads(closing).some((ref) => sameThread(ref, routeThreadRef));
+  useChatPanesStore.setState({
+    root: normalize(rest),
+    detachedThreadKey: closedRoute ? scopedThreadKey(routeThreadRef) : null,
+  });
   return closedRoute && rest ? collectLeaves(rest)[0]!.threadRef : null;
 }
 
@@ -260,8 +269,12 @@ export function closeThreadPane(
   const leaf = findLeafByThread(root, threadRef);
   if (!root || !leaf) return null;
   const rest = removeTab(root, threadRef);
-  useChatPanesStore.setState({ root: normalize(rest) });
-  if (!rest || routeThreadRef === null || !sameThread(threadRef, routeThreadRef)) return null;
+  const closedRoute = routeThreadRef !== null && sameThread(threadRef, routeThreadRef);
+  useChatPanesStore.setState({
+    root: normalize(rest),
+    detachedThreadKey: closedRoute ? scopedThreadKey(threadRef) : null,
+  });
+  if (!rest || !closedRoute) return null;
   // The neighbouring tab takes over; a closed pane hands off to the first one left.
   return (
     (findNode(rest, leaf.id) as ChatPaneLeaf | null)?.threadRef ?? collectLeaves(rest)[0]!.threadRef
@@ -308,12 +321,12 @@ export function togglePaneCollapsed(
  * and becomes the one new threads join.
  */
 export function focusThreadPane(threadRef: ScopedThreadRef) {
-  const { root, focusedPaneId } = useChatPanesStore.getState();
+  const { root, focusedPaneId, detachedThreadKey } = useChatPanesStore.getState();
   const leaf = findLeafByThread(root, threadRef);
   if (!root || !leaf) return;
   const next = setPaneCollapsed(activateTab(root, threadRef), leaf.id, false);
-  if (next !== root || focusedPaneId !== leaf.id) {
-    useChatPanesStore.setState({ root: next, focusedPaneId: leaf.id });
+  if (next !== root || focusedPaneId !== leaf.id || detachedThreadKey !== null) {
+    useChatPanesStore.setState({ root: next, focusedPaneId: leaf.id, detachedThreadKey: null });
   }
 }
 
@@ -329,7 +342,11 @@ export function attachThreadToFocusedPane(threadRef: ScopedThreadRef): boolean {
   const { root, focusedPaneId } = useChatPanesStore.getState();
   const pane = resolveAttachPane(root, focusedPaneId);
   if (!root || !pane || findLeafByThread(root, threadRef)) return false;
-  useChatPanesStore.setState({ root: addTab(root, pane.id, threadRef), focusedPaneId: pane.id });
+  useChatPanesStore.setState({
+    root: addTab(root, pane.id, threadRef),
+    focusedPaneId: pane.id,
+    detachedThreadKey: null,
+  });
   return true;
 }
 
@@ -378,7 +395,13 @@ export function hoverChatPaneDrop(point: { x: number; y: number } | null) {
   const { drag, root } = useChatPanesStore.getState();
   if (!drag) return;
   let target = point ? resolveChatPaneDropTarget(point) : null;
-  if (target && drag.sourcePaneId === target.paneId) {
+  if (
+    target?.zone === "tabs" &&
+    root &&
+    findLeafByThread(root, drag.threadRef)?.id === target.paneId
+  ) {
+    target = null;
+  } else if (target && drag.sourcePaneId === target.paneId) {
     // A pane can split off one of its tabs, but cannot take back its only one.
     const source = root ? findNode(root, target.paneId) : null;
     const tabCount = source?.kind === "leaf" ? leafThreads(source).length : 1;

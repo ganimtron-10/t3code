@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
 import {
   memo,
+  use,
   useEffect,
   useRef,
   type CSSProperties,
@@ -40,6 +41,7 @@ import { useThreadShell } from "~/state/entities";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import ChatView from "../ChatView";
+import { BackgroundThreadContext } from "./backgroundThread";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -121,11 +123,14 @@ function useFollowThread() {
 export function ChatPanes({
   root,
   routeThreadRef,
+  routeViewKey,
   draft,
 }: {
   root: ChatPaneNode;
   routeThreadRef: ScopedThreadRef;
-  /** A new thread being written, shown as the active tab of pane `paneId`. */
+  /** Key for the route thread's ChatView, so a promoted draft keeps its instance. */
+  routeViewKey?: string | undefined;
+  /** A view not yet in the layout (a new thread), shown as the active tab of pane `paneId`. */
   draft?: PaneDraft | undefined;
 }) {
   const routeThreadKey = scopedThreadKey(routeThreadRef);
@@ -150,6 +155,7 @@ export function ChatPanes({
           edges={WINDOW_TOP_EDGES}
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
+          routeViewKey={routeViewKey}
           draft={draft}
         />
       </div>
@@ -182,20 +188,31 @@ interface PaneNodeProps {
   routeThreadRef: ScopedThreadRef;
   /** Set inside a run of folded panes, which share the space their headers need. */
   fold?: PaneFold | undefined;
+  routeViewKey: string | undefined;
   draft: PaneDraft | undefined;
 }
 
-function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold, draft }: PaneNodeProps) {
+function PaneNode({
+  node,
+  edges,
+  routeThreadKey,
+  routeThreadRef,
+  fold,
+  routeViewKey,
+  draft,
+}: PaneNodeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   if (node.kind === "leaf") {
     const draftView = draft?.paneId === node.id ? draft.view : undefined;
+    const routeLeaf = scopedThreadKey(node.threadRef) === routeThreadKey;
     return (
       <PaneLeaf
         leaf={node}
         edges={edges}
-        focused={draftView !== undefined || scopedThreadKey(node.threadRef) === routeThreadKey}
+        focused={draftView !== undefined || routeLeaf}
         routeThreadRef={routeThreadRef}
         fold={draftView === undefined ? fold : undefined}
+        viewKey={routeLeaf ? routeViewKey : undefined}
         draftView={draftView}
       />
     );
@@ -235,6 +252,7 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold, draft }: 
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
           fold={firstFold}
+          routeViewKey={routeViewKey}
           draft={draft}
         />
       </div>
@@ -262,6 +280,7 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold, draft }: 
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
           fold={secondFold}
+          routeViewKey={routeViewKey}
           draft={draft}
         />
       </div>
@@ -327,6 +346,7 @@ const PaneLeaf = memo(function PaneLeaf({
   focused,
   routeThreadRef,
   fold,
+  viewKey,
   draftView,
 }: {
   leaf: ChatPaneLeaf;
@@ -334,6 +354,7 @@ const PaneLeaf = memo(function PaneLeaf({
   focused: boolean;
   routeThreadRef: ScopedThreadRef;
   fold: PaneFold | undefined;
+  viewKey: string | undefined;
   /** A new thread being written here; it shows instead of the active tab. */
   draftView: ReactNode | undefined;
 }) {
@@ -346,6 +367,8 @@ const PaneLeaf = memo(function PaneLeaf({
   const closeTab = (tab: ScopedThreadRef) => follow(closeThreadPane(tab, routeThreadRef), true);
   const toggleCollapsed = () => follow(togglePaneCollapsed(leaf.id, routeThreadRef));
   const activeFocused = focused && draftView === undefined;
+  // Upstream's shortcut guards read this context, so a background pane stands down with them.
+  const background = use(BackgroundThreadContext) || !focused;
 
   // A background thread deleted elsewhere takes its tab with it. The route
   // thread's tab is closed by ThreadRouteView, which also picks where to go.
@@ -467,7 +490,6 @@ const PaneLeaf = memo(function PaneLeaf({
             aria-label="Threads in this pane"
             className="flex h-full min-w-0 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onWheel={(event) => {
-              // A plain mouse wheel scrolls the tabs sideways.
               if (event.deltaX === 0) event.currentTarget.scrollLeft += event.deltaY;
             }}
           >
@@ -519,15 +541,19 @@ const PaneLeaf = memo(function PaneLeaf({
         </Button>
       </div>
       {fold ? null : draftView !== undefined ? (
-        draftView
-      ) : shell && !deleted ? (
-        <ChatView
-          environmentId={threadRef.environmentId}
-          threadId={threadRef.threadId}
-          routeKind="server"
-          paneMode={focused ? "focused" : "background"}
-          reserveTitleBarControlInset={false}
-        />
+        // The same wrapper as the tab view below, so a promoted draft keeps its ChatView.
+        <BackgroundThreadContext value={background}>{draftView}</BackgroundThreadContext>
+      ) : !deleted && (shell || activeFocused) ? (
+        <BackgroundThreadContext value={background}>
+          <ChatView
+            key={viewKey}
+            environmentId={threadRef.environmentId}
+            threadId={threadRef.threadId}
+            routeKind="server"
+            paneMode={focused ? "focused" : "background"}
+            reserveTitleBarControlInset={false}
+          />
+        </BackgroundThreadContext>
       ) : (
         <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
           Loading thread…
@@ -559,7 +585,14 @@ function PaneTab({
   onToggle: () => void;
   onClose: () => void;
 }) {
-  const title = useThreadShell(threadRef)?.title ?? "Thread";
+  const shell = useThreadShell(threadRef);
+  const title = shell?.title ?? "Thread";
+  const deleted = shell?.deletedAt != null;
+  const closeDeleted = useStableCallback(onClose);
+  // oxlint-disable-next-line t3code/react-effect-budget -- reacts to a deletion pushed by the server
+  useEffect(() => {
+    if (deleted && !active) closeDeleted();
+  }, [active, closeDeleted, deleted]);
   return (
     <div
       ref={active ? revealTab : undefined}

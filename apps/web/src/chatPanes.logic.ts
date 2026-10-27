@@ -17,7 +17,6 @@ export type SplitZone = Exclude<DropZone, "tabs">;
 export interface ChatPaneLeaf {
   readonly kind: "leaf";
   readonly id: ChatPaneId;
-  /** The active tab. */
   readonly threadRef: ScopedThreadRef;
   /** Every tab in order, including the active one; absent means just `threadRef`. */
   readonly tabs?: readonly ScopedThreadRef[];
@@ -308,7 +307,6 @@ export function addTab(
   });
 }
 
-/** Makes `threadRef` the active tab of the pane holding it. */
 export function activateTab(root: ChatPaneNode, threadRef: ScopedThreadRef): ChatPaneNode {
   const key = scopedThreadKey(threadRef);
   const leaf = findLeafByThread(root, threadRef);
@@ -336,7 +334,6 @@ export function removeTab(root: ChatPaneNode, threadRef: ScopedThreadRef): ChatP
   return mapLeaf(root, leaf.id, (current) => withTabs(current, rest, active));
 }
 
-/** Moves `threadRef`'s tab into pane `toId`'s tabs. */
 export function moveTab(
   root: ChatPaneNode,
   threadRef: ScopedThreadRef,
