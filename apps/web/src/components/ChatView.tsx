@@ -2727,6 +2727,7 @@ export default function ChatView(props: ChatViewProps) {
     handleInteractionModeChange,
     handleInteractionModeChangeStable,
     handleRuntimeModeChangeStable,
+    onAgentProfileChangeStable,
     onEnvModeChangeStable,
     onProviderModelSelectStable,
     onStartFromOriginChange,
@@ -2753,6 +2754,10 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
   });
+  const agentProfiles =
+    serverConfig?.environment.capabilities.agentProfiles === true
+      ? settings.agentProfiles
+      : undefined;
   const { onResume, isResuming } = useComposerResume({
     environmentId,
     routeThreadKey,
@@ -3662,6 +3667,13 @@ export default function ChatView(props: ChatViewProps) {
                               toggleInteractionMode={toggleInteractionModeStable}
                               handleRuntimeModeChange={handleRuntimeModeChangeStable}
                               handleInteractionModeChange={handleInteractionModeChangeStable}
+                              {...(isLocalDraftThread && agentProfiles
+                                ? {
+                                    agentProfiles,
+                                    agentProfileId: draftThread?.agentProfileId ?? null,
+                                    onAgentProfileChange: onAgentProfileChangeStable,
+                                  }
+                                : {})}
                               focusComposer={focusComposerStable}
                               scheduleComposerFocus={scheduleComposerFocusStable}
                               setThreadError={setThreadError}

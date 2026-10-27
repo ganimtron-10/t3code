@@ -41,6 +41,7 @@ import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { resolveAgentInstructions } from "../provider/AgentProfileInstructions.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -1627,6 +1628,19 @@ export const layer: Layer.Layer<
           key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
           text: entry.text,
         }));
+        const agentInstructions =
+          input.appThread.agentProfileId === undefined
+            ? undefined
+            : yield* serverSettings.getSettings.pipe(
+                Effect.map((settings) =>
+                  resolveAgentInstructions(settings.agentProfiles, input.appThread.agentProfileId),
+                ),
+                Effect.catch((cause) =>
+                  Effect.logWarning("Failed to read agent profiles.", { cause }).pipe(
+                    Effect.as(undefined),
+                  ),
+                ),
+              );
         const turnInput = {
           appThread: input.appThread,
           threadId: input.run.threadId,
@@ -1648,6 +1662,7 @@ export const layer: Layer.Layer<
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
           ...(appContext.length === 0 ? {} : { appContext }),
+          ...(agentInstructions === undefined ? {} : { agentInstructions }),
         };
         // Check after the context read: ingestion can settle the run while
         // it awaits. A failed ownership read fails the start below.

@@ -428,6 +428,8 @@ export interface ProviderAdapterV2TurnInput {
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
+  /** Role rules from the thread's agent profile, for the provider's system prompt. */
+  readonly agentInstructions?: string;
 }
 
 export interface ProviderAdapterV2SteerInput {
