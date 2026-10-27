@@ -1,14 +1,16 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { collectLeaves, findLeafByThread } from "./chatPanes.logic";
 import {
   SOLO_PANE_ID,
+  attachThreadToFocusedPane,
   canOpenThreadInSplit,
   closePane,
   closeRouteThreadPane,
   closeThreadPane,
-  expandThreadPane,
+  focusThreadPane,
   openThreadInSplit,
   placeThread,
   selectRouteLayout,
@@ -28,7 +30,14 @@ const paneOf = (threadId: string) =>
   findLeafByThread(useChatPanesStore.getState().root, ref(threadId))!.id;
 
 describe("chat panes store", () => {
-  beforeEach(() => useChatPanesStore.setState({ root: null, drag: null }));
+  beforeEach(() =>
+    useChatPanesStore.setState({
+      root: null,
+      focusedPaneId: null,
+      detachedThreadKey: null,
+      drag: null,
+    }),
+  );
 
   it("starts a layout from the thread shown on its own", () => {
     expect(placeThread(ref("a"), ref("b"), { paneId: SOLO_PANE_ID, zone: "left" })).toBe(true);
@@ -86,7 +95,78 @@ describe("chat panes store", () => {
     expect(togglePaneCollapsed(paneOf("a"), ref("a"))?.threadId).toBe("b");
     expect(collapsed("a")).toBe(true);
 
-    expandThreadPane(ref("a"));
+    focusThreadPane(ref("a"));
     expect(collapsed("a")).toBe(false);
+  });
+
+  const tabsOf = (threadId: string) => {
+    const leaf = findLeafByThread(useChatPanesStore.getState().root, ref(threadId))!;
+    return (leaf.tabs ?? [leaf.threadRef]).map((tab) => tab.threadId);
+  };
+
+  it("opens a thread from outside the layout as a tab of the focused pane", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    focusThreadPane(ref("b"));
+    expect(attachThreadToFocusedPane(ref("c"))).toBe(true);
+    expect(tabsOf("c")).toEqual(["b", "c"]);
+    expect(paneOf("c")).toBe(paneOf("b"));
+    expect(attachThreadToFocusedPane(ref("c"))).toBe(false);
+  });
+
+  it("does not attach without a layout", () => {
+    expect(attachThreadToFocusedPane(ref("c"))).toBe(false);
+    expect(useChatPanesStore.getState().root).toBeNull();
+  });
+
+  it("closing a tab keeps its pane and hands the route to the neighbour", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    focusThreadPane(ref("b"));
+    attachThreadToFocusedPane(ref("c"));
+    expect(closeThreadPane(ref("c"), ref("c"))).toEqual(ref("b"));
+    expect(tabsOf("b")).toEqual(["b"]);
+    expect(threads()).toEqual(["a", "b"]);
+  });
+
+  it("keeps one pane with several tabs as a layout", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    focusThreadPane(ref("a"));
+    attachThreadToFocusedPane(ref("c"));
+    expect(closeThreadPane(ref("b"), ref("a"))).toBeNull();
+    expect(tabsOf("a")).toEqual(["a", "c"]);
+    expect(closeThreadPane(ref("c"), ref("a"))).toBeNull();
+    expect(useChatPanesStore.getState().root).toBeNull();
+  });
+
+  it("drops a thread on a tab strip as a tab, and splits a tab out of its pane", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    expect(placeThread(ref("a"), ref("c"), { paneId: paneOf("a"), zone: "tabs" })).toBe(true);
+    expect(tabsOf("a")).toEqual(["a", "c"]);
+    expect(placeThread(ref("a"), ref("c"), { paneId: paneOf("a"), zone: "bottom" })).toBe(true);
+    expect(tabsOf("a")).toEqual(["a"]);
+    expect(threads()).toEqual(["a", "c", "b"]);
+    expect(placeThread(ref("a"), ref("b"), { paneId: paneOf("c"), zone: "tabs" })).toBe(true);
+    expect(tabsOf("c")).toEqual(["c", "b"]);
+  });
+
+  it("focusing a tab makes it active", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    focusThreadPane(ref("a"));
+    attachThreadToFocusedPane(ref("c"));
+    focusThreadPane(ref("a"));
+    expect(findLeafByThread(useChatPanesStore.getState().root, ref("a"))!.threadRef).toEqual(
+      ref("a"),
+    );
+  });
+
+  it("remembers a closed route tab until focus moves on, so it does not rejoin", () => {
+    openThreadInSplit(ref("a"), ref("b"));
+    focusThreadPane(ref("b"));
+    attachThreadToFocusedPane(ref("c"));
+    closeThreadPane(ref("c"), ref("c"));
+    expect(useChatPanesStore.getState().detachedThreadKey).toBe(scopedThreadKey(ref("c")));
+    focusThreadPane(ref("b"));
+    expect(useChatPanesStore.getState().detachedThreadKey).toBeNull();
+    closeThreadPane(ref("a"), ref("b"));
+    expect(useChatPanesStore.getState().detachedThreadKey).toBeNull();
   });
 });
