@@ -2,6 +2,7 @@ import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 export type ThreadActionMenuId =
+  | "open-in-split"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
@@ -66,6 +67,8 @@ export function buildDraftActionMenuItems(options: {
 
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
+  /** Offered where the menu can place the thread beside the one on screen. */
+  readonly canOpenInSplit?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
     readonly label: string;
@@ -94,6 +97,7 @@ export interface ThreadActionMenuState {
 /** Local navigation, read markers, and copying remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
+    "open-in-split",
     "new-thread-on-branch",
     "project-settings",
     "mark-unread",
@@ -109,6 +113,9 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
+    ...(state.canOpenInSplit
+      ? [{ id: "open-in-split" as const, label: "Open in split view", icon: "columns-2" }]
+      : []),
     ...(state.branch
       ? [
           {

@@ -40,7 +40,13 @@ export type TimelineNavigation =
   | { readonly source: "wheel"; readonly direction: TimelineScrollDirection }
   | { readonly source: "touch" }
   | { readonly source: "pointer"; readonly onScrollbar: boolean }
-  | { readonly source: "key"; readonly key: string; readonly direction: TimelineScrollDirection }
+  | {
+      readonly source: "key";
+      readonly key: string;
+      readonly direction: TimelineScrollDirection;
+      /** Heard at the page rather than inside this timeline. */
+      readonly fromPage?: boolean;
+    }
   | { readonly source: "scroll" }
   | { readonly source: "command"; readonly releasesFollow: boolean };
 
@@ -107,7 +113,12 @@ export function attachTimelineViewport(scrollNode: HTMLElement): TimelineViewpor
     ) {
       return;
     }
-    emit({ source: "key", key: event.key, direction });
+    emit({
+      source: "key",
+      key: event.key,
+      direction,
+      fromPage: !scrollNode.contains(event.target),
+    });
   };
   // Input inside an embedded frame reaches none of the listeners above, but
   // its scroll still chains out to the timeline.

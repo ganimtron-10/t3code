@@ -1,11 +1,21 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { Navigate, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
+import { ChatPaneDropArea, ChatPanes } from "./chat/ChatPanes";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
+import {
+  SOLO_PANE_ID,
+  attachThreadToFocusedPane,
+  closeRouteThreadPane,
+  resolveAttachPane,
+  selectRouteLayout,
+  useChatPanesStore,
+} from "../chatPanesStore";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useEnvironmentThreadRefs, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentShellStatus } from "../state/shell";
@@ -40,6 +50,20 @@ export function ThreadRouteView({
   );
   const serverThreadRef = target.kind === "server" ? target.threadRef : null;
   const serverThreadShell = useQuietThreadShell(serverThreadRef);
+  const isMobileViewport = useMediaQuery("max-sm");
+  const paneLayout = useChatPanesStore((state) =>
+    target.kind === "server" && !isMobileViewport
+      ? selectRouteLayout(state.root, target.threadRef)
+      : null,
+  );
+  // With panes open, a thread or new draft from outside them joins the focused pane as a tab.
+  const panesEnabled = !background && !isMobileViewport;
+  const draftPaneId = useChatPanesStore((state) =>
+    panesEnabled && target.kind === "draft"
+      ? (resolveAttachPane(state.root, state.focusedPaneId)?.id ?? null)
+      : null,
+  );
+  const draftPaneLayout = useChatPanesStore((state) => (draftPaneId ? state.root : null));
   const shellStatus = useEnvironmentShellStatus(serverThreadRef?.environmentId ?? null);
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
   const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shellStatus);
@@ -96,17 +120,48 @@ export function ThreadRouteView({
     if (renderState === "missing") {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
-      if (environmentHasAnyThreads && !background) {
+      const survivor = background ? null : closeRouteThreadPane(target.threadRef);
+      if (survivor) {
+        void navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(survivor),
+          replace: true,
+        });
+      } else if (environmentHasAnyThreads && !background) {
         void navigate({ to: "/", replace: true });
       }
     }
   }, [background, bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
 
+  const attachPaneId = useChatPanesStore((state) =>
+    target.kind === "server" && panesEnabled && paneLayout === null
+      ? (resolveAttachPane(state.root, state.focusedPaneId)?.id ?? null)
+      : null,
+  );
+  const attachLayout = useChatPanesStore((state) => (attachPaneId ? state.root : null));
+  const routeTabJustClosed = useChatPanesStore(
+    (state) =>
+      serverThreadRef !== null && state.detachedThreadKey === scopedThreadKey(serverThreadRef),
+  );
+  const routeThreadShown =
+    renderState === "ready" || (renderState === "loading" && serverThreadShell !== null);
+  const attachToPanes =
+    attachPaneId !== null && attachLayout !== null && routeThreadShown && !routeTabJustClosed;
+  // oxlint-disable-next-line t3code/react-effect-budget -- joins the route thread to the pane layout before paint
+  useLayoutEffect(() => {
+    if (attachToPanes && target.kind === "server") attachThreadToFocusedPane(target.threadRef);
+  }, [attachToPanes, target]);
+
   let view: React.ReactNode = null;
   let redirect: React.ReactNode = null;
   if (target.kind === "draft") {
+    const inPane = draftPaneLayout !== null && draftPaneId !== null;
+    const paneProps = inPane
+      ? ({ paneMode: "focused", reserveTitleBarControlInset: false } as const)
+      : ({} as const);
+    let draftChat: React.ReactNode = null;
     if (draftSession) {
-      view = (
+      draftChat = (
         <ChatView
           key={target.draftId}
           draftId={target.draftId}
@@ -114,16 +169,18 @@ export function ThreadRouteView({
           threadId={draftSession.threadId}
           routeKind="draft"
           forceExpandedMobileComposer
+          {...paneProps}
         />
       );
     } else if (draftRedirect) {
       // Same slot and key as the server route renders, so the swap keeps this instance.
-      view = (
+      draftChat = (
         <ChatView
           key={target.draftId}
           environmentId={draftRedirect.environmentId}
           threadId={draftRedirect.threadId}
           routeKind="server"
+          {...paneProps}
         />
       );
       redirect = (
@@ -136,14 +193,67 @@ export function ThreadRouteView({
     } else {
       redirect = <Navigate to="/" replace />;
     }
+    const draftRef = draftSession
+      ? { environmentId: draftSession.environmentId, threadId: draftSession.threadId }
+      : draftRedirect;
+    if (draftChat && inPane && draftRef) {
+      view = (
+        <ChatPanes
+          root={draftPaneLayout}
+          routeThreadRef={draftRef}
+          draft={{ paneId: draftPaneId, view: draftChat }}
+        />
+      );
+    } else if (draftChat) {
+      view = (
+        <ChatPaneDropArea paneId={SOLO_PANE_ID} enabled={false}>
+          {draftChat}
+        </ChatPaneDropArea>
+      );
+    }
+  } else if (paneLayout) {
+    view = (
+      <ChatPanes
+        root={paneLayout}
+        routeThreadRef={target.threadRef}
+        routeViewKey={nextHandoffKey?.key}
+      />
+    );
+  } else if (attachToPanes && attachLayout && attachPaneId) {
+    // Shown in its pane already, so the frame before it joins the layout keeps the layout.
+    view = (
+      <ChatPanes
+        root={attachLayout}
+        routeThreadRef={target.threadRef}
+        routeViewKey={nextHandoffKey?.key}
+        draft={{
+          paneId: attachPaneId,
+          view: (
+            <ChatView
+              key={nextHandoffKey?.key}
+              environmentId={target.threadRef.environmentId}
+              threadId={target.threadRef.threadId}
+              routeKind="server"
+              paneMode="focused"
+              reserveTitleBarControlInset={false}
+            />
+          ),
+        }}
+      />
+    );
+  } else if (routeTabJustClosed && attachPaneId !== null) {
+    // The close handler is moving the route to a neighbouring tab.
+    view = null;
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
-      <ChatView
-        key={nextHandoffKey?.key}
-        environmentId={target.threadRef.environmentId}
-        threadId={target.threadRef.threadId}
-        routeKind="server"
-      />
+      <ChatPaneDropArea paneId={SOLO_PANE_ID} enabled={!isMobileViewport}>
+        <ChatView
+          key={nextHandoffKey?.key}
+          environmentId={target.threadRef.environmentId}
+          threadId={target.threadRef.threadId}
+          routeKind="server"
+        />
+      </ChatPaneDropArea>
     );
   }
 
