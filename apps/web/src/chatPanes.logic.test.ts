@@ -3,14 +3,19 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contract
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  activateTab,
+  addTab,
   collectLeaves,
   equalizePanes,
   findLeafByThread,
   findNode,
   isPaneFolded,
   isRestorableLayout,
+  leafThreads,
   movePane,
+  moveTab,
   removePane,
+  removeTab,
   resolveDropZone,
   resolveEdgeDropZone,
   setPaneCollapsed,
@@ -184,5 +189,66 @@ describe("drop zones", () => {
     expect(resolveEdgeDropZone(rect, 5, 100)).toBe("left");
     expect(resolveEdgeDropZone(rect, 150, 195)).toBe("bottom");
     expect(resolveEdgeDropZone(rect, 150, 100)).toBeNull();
+  });
+});
+
+describe("pane tabs", () => {
+  const ids = (node: ChatPaneNode | null, paneId: string) => {
+    const pane = node ? findNode(node, paneId) : null;
+    return pane?.kind === "leaf"
+      ? { tabs: leafThreads(pane).map((tab) => tab.threadId), active: pane.threadRef.threadId }
+      : null;
+  };
+  const twoPanes = () => splitPane(leaf("a"), "a", "right", leaf("b"), "s1");
+
+  it("adds a tab after the active one and makes it active", () => {
+    const withC = addTab(twoPanes(), "a", ref("c"));
+    expect(ids(withC, "a")).toEqual({ tabs: ["a", "c"], active: "c" });
+    const withD = addTab(activateTab(withC, ref("a")), "a", ref("d"));
+    expect(ids(withD, "a")).toEqual({ tabs: ["a", "d", "c"], active: "d" });
+    expect(findLeafByThread(withD, ref("c"))?.id).toBe("a");
+  });
+
+  it("re-adding a tab only activates it", () => {
+    const layout = addTab(twoPanes(), "a", ref("c"));
+    expect(ids(addTab(layout, "a", ref("a")), "a")).toEqual({ tabs: ["a", "c"], active: "a" });
+  });
+
+  it("closing the active tab activates its neighbour and the last tab takes the pane", () => {
+    const layout = addTab(addTab(twoPanes(), "a", ref("c")), "a", ref("d"));
+    const withoutD = removeTab(layout, ref("d"));
+    expect(ids(withoutD, "a")).toEqual({ tabs: ["a", "c"], active: "c" });
+    const single = removeTab(withoutD!, ref("a"));
+    expect(findNode(single!, "a")).toEqual({ kind: "leaf", id: "a", threadRef: ref("c") });
+    expect(order(removeTab(single!, ref("c")))).toEqual(["b"]);
+  });
+
+  it("moves a tab between panes and drops the emptied pane", () => {
+    const layout = addTab(twoPanes(), "a", ref("c"));
+    const moved = moveTab(layout, ref("c"), "b");
+    expect(ids(moved, "a")).toEqual({ tabs: ["a"], active: "a" });
+    expect(ids(moved, "b")).toEqual({ tabs: ["b", "c"], active: "c" });
+    expect(order(moveTab(moved, ref("a"), "b"))).toEqual(["b"]);
+  });
+
+  it("folds only when no tab of the pane has focus", () => {
+    const layout = setPaneCollapsed(addTab(twoPanes(), "b", ref("c")), "b", true);
+    const right = layout.kind === "split" ? layout.second : layout;
+    expect(isPaneFolded(right, scopedThreadKey(ref("a")))).toBe(true);
+    expect(isPaneFolded(right, scopedThreadKey(ref("c")))).toBe(false);
+  });
+
+  it("rejects saved tabs that repeat a thread or lose the active one", () => {
+    const layout = addTab(twoPanes(), "a", ref("c"));
+    expect(isRestorableLayout(layout)).toBe(true);
+    expect(isRestorableLayout(addTab(twoPanes(), "a", ref("b")))).toBe(false);
+    expect(
+      isRestorableLayout({
+        kind: "leaf",
+        id: "x",
+        threadRef: ref("z"),
+        tabs: [ref("a"), ref("c")],
+      }),
+    ).toBe(false);
   });
 });

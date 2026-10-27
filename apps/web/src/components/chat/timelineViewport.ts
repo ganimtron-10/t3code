@@ -113,7 +113,12 @@ export function attachTimelineViewport(scrollNode: HTMLElement): TimelineViewpor
     ) {
       return;
     }
-    emit({ source: "key", key: event.key, direction, fromPage: !scrollNode.contains(event.target) });
+    emit({
+      source: "key",
+      key: event.key,
+      direction,
+      fromPage: !scrollNode.contains(event.target),
+    });
   };
   // Input inside an embedded frame reaches none of the listeners above, but
   // its scroll still chains out to the timeline.

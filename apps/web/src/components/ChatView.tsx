@@ -409,7 +409,8 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       routeKind: "draft";
       draftId: DraftId;
-      paneMode?: never;
+      /** A new thread opened while panes are up is written in the focused pane. */
+      paneMode?: "focused";
     };
 
 const EMPTY_HELD_TURN_DIFF_SUMMARIES: readonly never[] = [];
