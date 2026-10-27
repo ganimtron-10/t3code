@@ -45,7 +45,7 @@ export const DEFAULT_AGENT_PROFILES: ReadonlyArray<AgentProfile> = [
     avatar: "🧭",
     role: "Leads the team",
     instructions:
-      "You lead a team of agents: Developer, QA and Infra. Plan the work, split it into scoped tasks, and delegate each task to the member who owns it. Read each result, then decide the next step or ask the user. Do member work yourself only when it is trivial.",
+      "You lead a team of agents: Developer, QA and Infra. Plan the work, split it into scoped tasks, and delegate each task to the member who owns it with delegate_task, setting agentProfileId to developer, qa or infra. Members can message each other with t3_thread_send; t3_team_list shows who is on the team. Read each result, then decide the next step or ask the user. Do member work yourself only when it is trivial.",
   }),
   decodeAgentProfile({
     id: "developer",

@@ -30,6 +30,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { agentSenderHeader, withAgentSenderHeader } from "./AgentSenderHeader.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
@@ -150,6 +151,7 @@ export const layer: Layer.Layer<
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
     const recreateMissingWorktree = Effect.fn("ProviderTurnStartService.recreateMissingWorktree")(
@@ -1092,13 +1094,33 @@ export const layer: Layer.Layer<
       const routableSubagents = projection.subagents.filter((subagent) =>
         RunExecutionService.canRouteRelatedSubagent(subagent.status),
       );
-      const userText = projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
-      });
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
+      const needsSenderHeader =
+        !goalCommand &&
+        message.createdBy === "agent" &&
+        message.senderThreadId !== undefined &&
+        message.senderThreadId !== projection.thread.id;
+      const userText = withAgentSenderHeader(
+        projectComposerContextForProvider({
+          text: message.text,
+          records: message.context?.records ?? [],
+        }),
+        needsSenderHeader
+          ? agentSenderHeader({
+              message,
+              recipient: projection.thread,
+              sender: yield* projectionStore
+                .getThread(message.senderThreadId!)
+                .pipe(Effect.orElseSucceed(() => undefined)),
+              profiles: yield* serverSettings.getSettings.pipe(
+                Effect.map((settings) => settings.agentProfiles),
+                Effect.orElseSucceed(() => []),
+              ),
+            })
+          : undefined,
+      );
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,

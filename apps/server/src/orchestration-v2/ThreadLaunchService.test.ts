@@ -524,6 +524,45 @@ it.effect("records the agent profile only on threads launched with one", () => {
   }).pipe(Effect.provide(harness.layer));
 });
 
+it.effect("gives a delegated child the requested team profile and nothing otherwise", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const chief = yield* launches.launch({
+      ...launchInput({ command: "command:chief", thread: "thread:chief", message: "Lead" }),
+      agentProfileId: AgentProfileId.make("chief"),
+    });
+    const run = (yield* threads.getThreadProjection(chief.threadId)).runs[0]!;
+    for (const [suffix, agentProfileId] of [
+      ["qa", AgentProfileId.make("qa")],
+      ["plain", undefined],
+    ] as const) {
+      yield* threads.dispatch({
+        type: "delegated_task.request",
+        commandId: CommandId.make(`command:chief:delegate:${suffix}`),
+        parentThreadId: chief.threadId,
+        parentRunId: run.id,
+        parentNodeId: run.rootNodeId!,
+        task: `Task for ${suffix}`,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        ...(agentProfileId === undefined ? {} : { agentProfileId }),
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    }
+    const children = yield* Effect.forEach(
+      (yield* threads.getThreadProjection(chief.threadId)).subagents,
+      (task) => threads.getThreadProjection(task.childThreadId!),
+    );
+    const byTask = new Map(children.map((child) => [child.thread.title, child.thread]));
+    assert.equal(byTask.get("Task for qa")?.agentProfileId, "qa");
+    assert.notProperty(byTask.get("Task for plain") ?? {}, "agentProfileId");
+    assert.equal(byTask.size, 2);
+  }).pipe(Effect.provide(harness.layer));
+});
 it.effect("provisions independent launches concurrently instead of behind a global semaphore", () =>
   Effect.gen(function* () {
     const setupCount = yield* Ref.make(0);
