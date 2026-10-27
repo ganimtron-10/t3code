@@ -1,6 +1,6 @@
 import { type AgentProfile, type AgentProfileId, findAgentProfile } from "@t3tools/contracts";
 
-export function buildAgentProfileInstructions(profile: AgentProfile): string {
+function buildAgentProfileInstructions(profile: AgentProfile): string {
   const role = profile.role === "" ? "" : ` (${profile.role})`;
   return [`## Agent identity`, `You are ${profile.name}${role}.`, profile.instructions]
     .filter((line) => line !== "")

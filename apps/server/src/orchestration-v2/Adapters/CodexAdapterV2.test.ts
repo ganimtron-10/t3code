@@ -278,7 +278,6 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isUndefined(without.additionalContext);
     }),
   );
-
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {

@@ -9,7 +9,7 @@ export const AgentProfileId = TrimmedNonEmptyString.check(Schema.isMaxLength(64)
 );
 export type AgentProfileId = typeof AgentProfileId.Type;
 
-export const AGENT_PROFILE_INSTRUCTIONS_MAX_LENGTH = 20_000;
+const AGENT_PROFILE_INSTRUCTIONS_MAX_LENGTH = 20_000;
 
 /** An agent identity: who the agent is and the role rules it works under. */
 export const AgentProfile = Schema.Struct({
