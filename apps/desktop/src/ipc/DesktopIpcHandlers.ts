@@ -40,7 +40,6 @@ import {
 import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
-  readLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
   getRelayTelemetryEnabled,
   getSystemLocale,
@@ -101,7 +100,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
-  yield* ipc.handle(readLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
@@ -166,7 +164,11 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
   for (const previewMethod of PreviewIpc.methods) {
-    yield* ipc.handle(previewMethod);
+    // Explicit types preserve the error/service union of these heterogeneous preview methods.
+    yield* ipc.handle<
+      Effect.Error<ReturnType<(typeof PreviewIpc.methods)[number]["handler"]>>,
+      Effect.Services<ReturnType<(typeof PreviewIpc.methods)[number]["handler"]>>
+    >(previewMethod);
   }
   yield* ipc.handle(PreviewIpc.listBrowserImportSources);
   yield* ipc.handle(PreviewIpc.importBrowserCookies);
