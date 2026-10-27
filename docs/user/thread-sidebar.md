@@ -137,10 +137,11 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 
 Drag a thread from the sidebar onto the chat area to open it beside the one you are reading. Drop near a pane's left, right, top, or bottom edge to split it there, or on the outer edge of the chat area to span the whole layout. **Open in split view** in a thread's menu does the same and places it on the right.
 
-- Drag a pane's header to move it, and drag the line between panes (or focus it and use the arrow keys) to resize. Double-click any of those lines to give every pane equal space.
-- Clicking a pane outside its title makes its thread the current one; only that pane takes keyboard shortcuts and pastes.
-- Close a pane with the × in its header, or settle its thread. Opening a thread that is not in the layout shows it on its own, and opening one that is brings the layout back.
-- Click a pane's title to fold it down to its header, and click again to unfold it. The other panes take the space. Hover the title to see the thread's full name.
+- Each pane holds one or more threads as tabs along its header. While panes are open, a thread you open from the sidebar, and a new thread, joins the pane you last used as a tab; opening one already in a pane switches to its tab.
+- Drag a tab to another pane's header to move it there, or to a pane's edge to split it off. Drag the line between panes (or focus it and use the arrow keys) to resize, and double-click it to give every pane equal space. Scroll over the tabs to see ones that do not fit.
+- Clicking inside a pane makes its thread the current one and puts the cursor in its composer; only that pane takes keyboard shortcuts and pastes.
+- Close a tab with its ×, or settle its thread; the × at the end of the header closes the pane and all its tabs. When a single pane with a single tab is left, it becomes the plain view again.
+- Click the current tab's title to fold the pane down to its header, and click again to unfold it. The other panes take the space. Hover a tab to see the thread's full name.
 - The layout is remembered per browser. Narrow windows always show a single thread.
 
 ## Settle finished work

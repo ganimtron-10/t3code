@@ -5,14 +5,19 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
+  activateTab,
+  addTab,
   clampPaneRatio,
   collectLeaves,
   equalizePanes,
   findLeafByThread,
   findNode,
   isRestorableLayout,
+  leafThreads,
   movePane,
+  moveTab,
   removePane,
+  removeTab,
   resolveDropZone,
   resolveEdgeDropZone,
   setPaneCollapsed,
@@ -28,9 +33,9 @@ import { resolveStorage } from "./lib/storage";
 
 /**
  * The window's split layout. The route stays the source of truth for the
- * focused thread; this store only remembers which threads sit beside it and
- * how the space is divided. A layout that collapses to one pane is the plain
- * chat view, so it is dropped as soon as that happens.
+ * focused thread; this store only remembers which threads sit beside it, how
+ * the space is divided, and which pane last had focus. A layout that shrinks
+ * to one pane with one tab is the plain chat view, so it is dropped then.
  */
 
 /** Drop target id for a thread shown on its own, outside any layout. */
@@ -50,16 +55,20 @@ export interface ChatPaneDrag {
 
 interface ChatPanesState {
   root: ChatPaneNode | null;
+  /** The pane threads opened from outside the layout join as a tab. */
+  focusedPaneId: ChatPaneId | null;
   drag: ChatPaneDrag | null;
   setRatio: (splitId: ChatPaneId, ratio: number) => void;
   equalize: () => void;
 }
 
+const ThreadRefSchema = Schema.Struct({ environmentId: EnvironmentId, threadId: ThreadId });
 const NodeSchema: Schema.Codec<ChatPaneNode> = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("leaf"),
     id: Schema.String,
-    threadRef: Schema.Struct({ environmentId: EnvironmentId, threadId: ThreadId }),
+    threadRef: ThreadRefSchema,
+    tabs: Schema.optionalKey(Schema.Array(ThreadRefSchema)),
     collapsed: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
@@ -72,13 +81,17 @@ const NodeSchema: Schema.Codec<ChatPaneNode> = Schema.Union([
   }),
 ]) as Schema.Codec<ChatPaneNode>;
 const decodePersisted = Schema.decodeUnknownSync(
-  Schema.Struct({ root: Schema.NullOr(NodeSchema) }),
+  Schema.Struct({
+    root: Schema.NullOr(NodeSchema),
+    focusedPaneId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
 );
 
 export const useChatPanesStore = create<ChatPanesState>()(
   persist(
     (set) => ({
       root: null,
+      focusedPaneId: null,
       drag: null,
       setRatio: (splitId, ratio) =>
         set((state) => {
@@ -98,13 +111,15 @@ export const useChatPanesStore = create<ChatPanesState>()(
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ root: state.root }),
+      partialize: (state) => ({ root: state.root, focusedPaneId: state.focusedPaneId }),
       merge: (persisted, current) => {
         try {
-          const { root } = decodePersisted(persisted);
+          const { root, focusedPaneId = null } = decodePersisted(persisted);
+          const restored = normalize(root);
           return {
             ...current,
-            root: root?.kind === "split" && isRestorableLayout(root) ? clampRatios(root) : null,
+            root: restored && isRestorableLayout(restored) ? clampRatios(restored) : null,
+            focusedPaneId,
           };
         } catch {
           return current;
@@ -128,9 +143,14 @@ function newLeaf(threadRef: ScopedThreadRef): ChatPaneLeaf {
   return { kind: "leaf", id: randomUUID(), threadRef };
 }
 
-/** A single pane is the plain chat view, not a layout. */
+/** A single pane with a single tab is the plain chat view, not a layout. */
 function normalize(root: ChatPaneNode | null): ChatPaneNode | null {
-  return root?.kind === "split" ? root : null;
+  if (!root) return null;
+  return root.kind === "split" || leafThreads(root).length > 1 ? root : null;
+}
+
+function sameThread(a: ScopedThreadRef, b: ScopedThreadRef): boolean {
+  return scopedThreadKey(a) === scopedThreadKey(b);
 }
 
 export function selectRouteLayout(
@@ -154,16 +174,29 @@ export function placeThread(
   const layout = selectRouteLayout(root, routeThreadRef);
   let next: ChatPaneNode | null;
   if (!layout) {
-    if (scopedThreadKey(routeThreadRef) === scopedThreadKey(threadRef)) return false;
+    if (sameThread(routeThreadRef, threadRef)) return false;
     const anchor = newLeaf(routeThreadRef);
-    next = splitPane(anchor, anchor.id, target.zone, newLeaf(threadRef), randomUUID());
+    next =
+      target.zone === "tabs"
+        ? addTab(anchor, anchor.id, threadRef)
+        : splitPane(anchor, anchor.id, target.zone, newLeaf(threadRef), randomUUID());
   } else if (!findNode(layout, target.paneId)) {
     return false;
   } else {
     const existing = findLeafByThread(layout, threadRef);
-    next = existing
-      ? movePane(layout, existing.id, target.paneId, target.zone, randomUUID())
-      : splitPane(layout, target.paneId, target.zone, newLeaf(threadRef), randomUUID());
+    if (target.zone === "tabs") {
+      next = existing
+        ? moveTab(layout, threadRef, target.paneId)
+        : addTab(layout, target.paneId, threadRef);
+    } else if (existing && leafThreads(existing).length === 1) {
+      next = movePane(layout, existing.id, target.paneId, target.zone, randomUUID());
+    } else {
+      // A tab dragged out of a pane with others leaves them behind.
+      const rest = existing ? removeTab(layout, threadRef) : layout;
+      const targetId = rest && findNode(rest, target.paneId) ? target.paneId : null;
+      if (!rest || !targetId) return false;
+      next = splitPane(rest, targetId, target.zone, newLeaf(threadRef), randomUUID());
+    }
   }
   if (next === root) return false;
   useChatPanesStore.setState({ root: normalize(next) });
@@ -211,21 +244,31 @@ export function closePane(
   const rest = removePane(root, paneId);
   useChatPanesStore.setState({ root: normalize(rest) });
   const closedRoute =
-    routeThreadRef !== null &&
-    scopedThreadKey(closing.threadRef) === scopedThreadKey(routeThreadRef);
+    routeThreadRef !== null && leafThreads(closing).some((ref) => sameThread(ref, routeThreadRef));
   return closedRoute && rest ? collectLeaves(rest)[0]!.threadRef : null;
 }
 
-/** Closes the pane showing `threadRef`, returning the thread the route should move to. */
+/**
+ * Closes `threadRef`'s tab, and its pane with it when it was the last tab.
+ * Returns the thread the route should move to when that tab was the route.
+ */
 export function closeThreadPane(
   threadRef: ScopedThreadRef,
   routeThreadRef: ScopedThreadRef | null,
 ): ScopedThreadRef | null {
-  const leaf = findLeafByThread(useChatPanesStore.getState().root, threadRef);
-  return leaf ? closePane(leaf.id, routeThreadRef) : null;
+  const { root } = useChatPanesStore.getState();
+  const leaf = findLeafByThread(root, threadRef);
+  if (!root || !leaf) return null;
+  const rest = removeTab(root, threadRef);
+  useChatPanesStore.setState({ root: normalize(rest) });
+  if (!rest || routeThreadRef === null || !sameThread(threadRef, routeThreadRef)) return null;
+  // The neighbouring tab takes over; a closed pane hands off to the first one left.
+  return (
+    (findNode(rest, leaf.id) as ChatPaneLeaf | null)?.threadRef ?? collectLeaves(rest)[0]!.threadRef
+  );
 }
 
-/** Closes the pane showing the route thread, returning the pane the route should move to. */
+/** Closes the route thread's tab, returning the thread the route should move to. */
 export function closeRouteThreadPane(routeThreadRef: ScopedThreadRef): ScopedThreadRef | null {
   return closeThreadPane(routeThreadRef, routeThreadRef);
 }
@@ -260,13 +303,34 @@ export function togglePaneCollapsed(
   return next?.threadRef ?? null;
 }
 
-/** Unfolds the pane showing `threadRef`, so a thread that takes focus is never left folded. */
-export function expandThreadPane(threadRef: ScopedThreadRef) {
-  const { root } = useChatPanesStore.getState();
+/**
+ * Brings the route thread forward: its tab becomes active, its pane unfolds
+ * and becomes the one new threads join.
+ */
+export function focusThreadPane(threadRef: ScopedThreadRef) {
+  const { root, focusedPaneId } = useChatPanesStore.getState();
   const leaf = findLeafByThread(root, threadRef);
-  if (root && leaf?.collapsed) {
-    useChatPanesStore.setState({ root: setPaneCollapsed(root, leaf.id, false) });
+  if (!root || !leaf) return;
+  const next = setPaneCollapsed(activateTab(root, threadRef), leaf.id, false);
+  if (next !== root || focusedPaneId !== leaf.id) {
+    useChatPanesStore.setState({ root: next, focusedPaneId: leaf.id });
   }
+}
+
+/** The pane a thread opened from outside the layout would join, or null without a layout. */
+export function resolveAttachPane(root: ChatPaneNode | null, focusedPaneId: ChatPaneId | null) {
+  if (!root) return null;
+  const focused = focusedPaneId ? findNode(root, focusedPaneId) : null;
+  return focused?.kind === "leaf" ? focused : collectLeaves(root)[0]!;
+}
+
+/** Opens `threadRef` as the active tab of the pane that last had focus. */
+export function attachThreadToFocusedPane(threadRef: ScopedThreadRef): boolean {
+  const { root, focusedPaneId } = useChatPanesStore.getState();
+  const pane = resolveAttachPane(root, focusedPaneId);
+  if (!root || !pane || findLeafByThread(root, threadRef)) return false;
+  useChatPanesStore.setState({ root: addTab(root, pane.id, threadRef), focusedPaneId: pane.id });
+  return true;
 }
 
 export function startChatPaneDrag(threadRef: ScopedThreadRef, sourcePaneId: ChatPaneId | null) {
@@ -283,12 +347,14 @@ export function endChatPaneDrag() {
  * rects instead of hit-testing keeps embedded browsers and drag ghosts from
  * hiding the pane beneath them.
  */
-export function resolveChatPaneDropTarget(point: {
-  x: number;
-  y: number;
-}): ChatPaneDropTarget | null {
+function resolveChatPaneDropTarget(point: { x: number; y: number }): ChatPaneDropTarget | null {
   const contains = (rect: DOMRect) =>
     point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+  // Pane headers sit on the layout's top edge, so the tab strips are checked first.
+  for (const element of document.querySelectorAll<HTMLElement>("[data-chat-pane-tabs]")) {
+    const paneId = element.dataset.chatPaneTabs;
+    if (paneId && contains(element.getBoundingClientRect())) return { paneId, zone: "tabs" };
+  }
   const rootElement = document.querySelector<HTMLElement>("[data-chat-panes-root]");
   if (rootElement) {
     const rect = rootElement.getBoundingClientRect();
@@ -309,10 +375,15 @@ export function resolveChatPaneDropTarget(point: {
 
 /** Updates the highlighted target for the drag in progress; null clears it. */
 export function hoverChatPaneDrop(point: { x: number; y: number } | null) {
-  const { drag } = useChatPanesStore.getState();
+  const { drag, root } = useChatPanesStore.getState();
   if (!drag) return;
   let target = point ? resolveChatPaneDropTarget(point) : null;
-  if (target && drag.sourcePaneId === target.paneId) target = null;
+  if (target && drag.sourcePaneId === target.paneId) {
+    // A pane can split off one of its tabs, but cannot take back its only one.
+    const source = root ? findNode(root, target.paneId) : null;
+    const tabCount = source?.kind === "leaf" ? leafThreads(source).length : 1;
+    if (target.zone === "tabs" || tabCount === 1) target = null;
+  }
   if (target?.paneId === drag.target?.paneId && target?.zone === drag.target?.zone) return;
   useChatPanesStore.setState({ drag: { ...drag, target } });
 }

@@ -1,7 +1,7 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { GripVerticalIcon, XIcon } from "lucide-react";
+import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -14,6 +14,8 @@ import {
 import {
   clampPaneRatio,
   isPaneFolded,
+  setPaneCollapsed,
+  leafThreads,
   paneSpan,
   type ChatPaneId,
   type ChatPaneLeaf,
@@ -23,9 +25,10 @@ import {
 } from "~/chatPanes.logic";
 import {
   closePane,
+  closeThreadPane,
   commitChatPaneDrop,
   endChatPaneDrag,
-  expandThreadPane,
+  focusThreadPane,
   hoverChatPaneDrop,
   startChatPaneDrag,
   togglePaneCollapsed,
@@ -45,6 +48,7 @@ const ZONE_CLASS: Record<DropZone, string> = {
   bottom: "inset-x-0 bottom-0 h-1/2",
   left: "inset-y-0 left-0 w-1/2",
   right: "inset-y-0 right-0 w-1/2",
+  tabs: "inset-0",
 };
 
 const EDGE_ZONE_CLASS: Record<DropZone, string> = {
@@ -52,6 +56,7 @@ const EDGE_ZONE_CLASS: Record<DropZone, string> = {
   bottom: "inset-x-0 bottom-0 h-1/3",
   left: "inset-y-0 left-0 w-1/3",
   right: "inset-y-0 right-0 w-1/3",
+  tabs: "inset-0",
 };
 
 /** Paints the region a drop on `paneId` would hand to the carried thread. */
@@ -116,17 +121,22 @@ function useFollowThread() {
 export function ChatPanes({
   root,
   routeThreadRef,
+  draft,
 }: {
   root: ChatPaneNode;
   routeThreadRef: ScopedThreadRef;
+  /** A new thread being written, shown as the active tab of pane `paneId`. */
+  draft?: PaneDraft | undefined;
 }) {
   const routeThreadKey = scopedThreadKey(routeThreadRef);
-  // Focusing a folded pane, from the sidebar or a reload, opens it back up.
+  const shown = draft ? setPaneCollapsed(root, draft.paneId, false) : root;
+  // The focused thread's tab comes forward and a folded pane opens back up.
   // Keyed on the thread, not the ref object, so folding the focused pane
   // isn't undone by a render that lands before the route moves on.
+  // oxlint-disable-next-line t3code/react-effect-budget -- syncs the persisted layout to the route
   useEffect(() => {
     const ref = parseScopedThreadKey(routeThreadKey);
-    if (ref) expandThreadPane(ref);
+    if (ref) focusThreadPane(ref);
   }, [routeThreadKey]);
   return (
     <div
@@ -134,12 +144,13 @@ export function ChatPanes({
       className="relative flex min-h-0 min-w-0 flex-1 overflow-auto bg-background"
       data-chat-panes-root={root.id}
     >
-      <div className="flex flex-1" style={minSize(root, routeThreadKey)}>
+      <div className="flex flex-1" style={minSize(shown, routeThreadKey)}>
         <PaneNode
-          node={root}
+          node={shown}
           edges={WINDOW_TOP_EDGES}
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
+          draft={draft}
         />
       </div>
       <DropHighlight paneId={root.id} edge />
@@ -156,6 +167,11 @@ interface PaneEdges {
 
 const WINDOW_TOP_EDGES: PaneEdges = { top: true, left: true, right: true };
 
+export interface PaneDraft {
+  readonly paneId: ChatPaneId;
+  readonly view: ReactNode;
+}
+
 /** How a folded pane draws its header: a bar across a column, or a strip down a row. */
 type PaneFold = "bar" | "strip";
 
@@ -166,18 +182,21 @@ interface PaneNodeProps {
   routeThreadRef: ScopedThreadRef;
   /** Set inside a run of folded panes, which share the space their headers need. */
   fold?: PaneFold | undefined;
+  draft: PaneDraft | undefined;
 }
 
-function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold }: PaneNodeProps) {
+function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold, draft }: PaneNodeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   if (node.kind === "leaf") {
+    const draftView = draft?.paneId === node.id ? draft.view : undefined;
     return (
       <PaneLeaf
         leaf={node}
         edges={edges}
-        focused={scopedThreadKey(node.threadRef) === routeThreadKey}
+        focused={draftView !== undefined || scopedThreadKey(node.threadRef) === routeThreadKey}
         routeThreadRef={routeThreadRef}
-        fold={fold}
+        fold={draftView === undefined ? fold : undefined}
+        draftView={draftView}
       />
     );
   }
@@ -216,6 +235,7 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold }: PaneNod
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
           fold={firstFold}
+          draft={draft}
         />
       </div>
       {resizable ? (
@@ -242,6 +262,7 @@ function PaneNode({ node, edges, routeThreadKey, routeThreadRef, fold }: PaneNod
           routeThreadKey={routeThreadKey}
           routeThreadRef={routeThreadRef}
           fold={secondFold}
+          draft={draft}
         />
       </div>
     </div>
@@ -306,34 +327,48 @@ const PaneLeaf = memo(function PaneLeaf({
   focused,
   routeThreadRef,
   fold,
+  draftView,
 }: {
   leaf: ChatPaneLeaf;
   edges: PaneEdges;
   focused: boolean;
   routeThreadRef: ScopedThreadRef;
   fold: PaneFold | undefined;
+  /** A new thread being written here; it shows instead of the active tab. */
+  draftView: ReactNode | undefined;
 }) {
   const { threadRef } = leaf;
+  const tabs = leafThreads(leaf);
   const follow = useFollowThread();
   const shell = useThreadShell(threadRef);
   const deleted = shell?.deletedAt != null;
   const close = useStableCallback(() => follow(closePane(leaf.id, routeThreadRef), true));
+  const closeTab = (tab: ScopedThreadRef) => follow(closeThreadPane(tab, routeThreadRef), true);
   const toggleCollapsed = () => follow(togglePaneCollapsed(leaf.id, routeThreadRef));
+  const activeFocused = focused && draftView === undefined;
 
-  // A background thread deleted elsewhere takes its pane with it. The route
-  // thread's pane is closed by ThreadRouteView, which also picks where to go.
+  // A background thread deleted elsewhere takes its tab with it. The route
+  // thread's tab is closed by ThreadRouteView, which also picks where to go.
+  const closeDeletedTab = useStableCallback(() => closeThreadPane(threadRef, routeThreadRef));
+  // oxlint-disable-next-line t3code/react-effect-budget -- reacts to a deletion pushed by the server
   useEffect(() => {
-    if (deleted && !focused) close();
-  }, [close, deleted, focused]);
+    if (deleted && !activeFocused) closeDeletedTab();
+  }, [activeFocused, closeDeletedTab, deleted]);
 
   const cancelDragRef = useRef<(() => void) | null>(null);
+  // oxlint-disable-next-line t3code/react-effect-budget -- ends a header drag still running at unmount
   useEffect(() => () => cancelDragRef.current?.(), []);
 
   const onHeaderPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || !event.isPrimary) return;
     const header = event.currentTarget;
-    const onTitle =
-      event.target instanceof Element && event.target.closest("[data-chat-pane-title]") !== null;
+    const tabElement =
+      event.target instanceof Element
+        ? event.target.closest<HTMLElement>("[data-chat-pane-tab]")
+        : null;
+    const tabRef = tabElement ? parseScopedThreadKey(tabElement.dataset.chatPaneTab ?? "") : null;
+    const onDraftTab = tabElement?.dataset.chatPaneTab === "draft";
+    const dragRef = tabRef ?? threadRef;
     const pointerId = event.pointerId;
     const start = { x: event.clientX, y: event.clientY };
     let dragging = false;
@@ -349,13 +384,13 @@ const PaneLeaf = memo(function PaneLeaf({
       document.body.style.removeProperty("user-select");
     };
     const onMove = (move: PointerEvent) => {
-      if (move.pointerId !== pointerId) return;
+      if (move.pointerId !== pointerId || onDraftTab) return;
       if (!dragging) {
         if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < DRAG_DISTANCE) return;
         dragging = true;
         document.body.style.cursor = "grabbing";
         document.body.style.userSelect = "none";
-        startChatPaneDrag(threadRef, leaf.id);
+        startChatPaneDrag(dragRef, leaf.id);
       }
       hoverChatPaneDrop({ x: move.clientX, y: move.clientY });
     };
@@ -363,8 +398,10 @@ const PaneLeaf = memo(function PaneLeaf({
       if (up.pointerId !== pointerId) return;
       finish();
       if (dragging) follow(commitChatPaneDrop(routeThreadRef));
-      else if (onTitle) toggleCollapsed();
-      else if (!focused) follow(threadRef);
+      else if (onDraftTab) return;
+      else if (tabRef && scopedThreadKey(tabRef) !== scopedThreadKey(threadRef)) follow(tabRef);
+      else if (tabRef && draftView === undefined) toggleCollapsed();
+      else if (!activeFocused) follow(threadRef);
     };
     const onCancel = () => {
       finish();
@@ -417,34 +454,51 @@ const PaneLeaf = memo(function PaneLeaf({
           fold && "bg-muted/40",
         )}
         data-chat-pane-header
+        // Dropping a thread anywhere on the header adds it as a tab.
+        data-chat-pane-tabs={leaf.id}
         onPointerDown={onHeaderPointerDown}
       >
         <GripVerticalIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span
-                role="button"
-                tabIndex={0}
-                aria-expanded={fold === undefined}
-                className={cn(
-                  "min-w-0 cursor-pointer truncate rounded-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                  strip && "min-h-0 [writing-mode:vertical-rl]",
-                )}
-                data-chat-pane-title
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  toggleCollapsed();
-                }}
-              />
-            }
+        {strip ? (
+          <PaneTabTitle title={title} strip expanded={false} onToggle={toggleCollapsed} />
+        ) : (
+          <div
+            role="tablist"
+            aria-label="Threads in this pane"
+            className="flex h-full min-w-0 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            onWheel={(event) => {
+              // A plain mouse wheel scrolls the tabs sideways.
+              if (event.deltaX === 0) event.currentTarget.scrollLeft += event.deltaY;
+            }}
           >
-            {title}
-          </TooltipTrigger>
-          <TooltipPopup side={strip ? "right" : "bottom"}>{title}</TooltipPopup>
-        </Tooltip>
-        {/* The gap after the title still moves the window, as the title bar it replaces did. */}
+            {tabs.map((tab) => (
+              <PaneTab
+                key={scopedThreadKey(tab)}
+                threadRef={tab}
+                active={
+                  draftView === undefined && scopedThreadKey(tab) === scopedThreadKey(threadRef)
+                }
+                expanded={fold === undefined}
+                closable={tabs.length > 1 || draftView !== undefined}
+                onToggle={toggleCollapsed}
+                onClose={() => closeTab(tab)}
+              />
+            ))}
+            {draftView !== undefined ? (
+              <span
+                ref={revealTab}
+                role="tab"
+                aria-selected
+                className="flex shrink-0 items-center gap-1 border-b-2 border-b-primary px-2 font-medium"
+                data-chat-pane-tab="draft"
+              >
+                <PlusIcon aria-hidden className="size-3" />
+                New thread
+              </span>
+            ) : null}
+          </div>
+        )}
+        {/* The gap after the tabs still moves the window, as the title bar it replaces did. */}
         <span
           aria-hidden
           className={cn(
@@ -456,15 +510,17 @@ const PaneLeaf = memo(function PaneLeaf({
         <Button
           variant="ghost"
           size="icon-micro"
-          aria-label={`Close pane for ${title}`}
-          title="Close pane"
+          aria-label={tabs.length > 1 ? "Close pane and its tabs" : `Close pane for ${title}`}
+          title={tabs.length > 1 ? "Close pane and its tabs" : "Close pane"}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={close}
         >
           <XIcon />
         </Button>
       </div>
-      {fold ? null : shell && !deleted ? (
+      {fold ? null : draftView !== undefined ? (
+        draftView
+      ) : shell && !deleted ? (
         <ChatView
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
@@ -481,6 +537,109 @@ const PaneLeaf = memo(function PaneLeaf({
     </section>
   );
 });
+
+/** Scrolls a tab that becomes active into the strip's view. */
+function revealTab(node: HTMLElement | null) {
+  node?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+/** One tab in a pane's header. The active one folds the pane when clicked, as its title did. */
+function PaneTab({
+  threadRef,
+  active,
+  expanded,
+  closable,
+  onToggle,
+  onClose,
+}: {
+  threadRef: ScopedThreadRef;
+  active: boolean;
+  expanded: boolean;
+  closable: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}) {
+  const title = useThreadShell(threadRef)?.title ?? "Thread";
+  return (
+    <div
+      ref={active ? revealTab : undefined}
+      role="tab"
+      aria-selected={active}
+      className={cn(
+        "group/tab flex max-w-48 min-w-0 shrink-0 items-center gap-0.5 border-b-2 pl-2",
+        closable ? "pr-0.5" : "pr-2",
+        active ? "border-b-primary text-foreground" : "border-b-transparent hover:text-foreground",
+      )}
+      data-chat-pane-tab={scopedThreadKey(threadRef)}
+    >
+      <PaneTabTitle
+        title={title}
+        strip={false}
+        expanded={expanded}
+        onToggle={active ? onToggle : undefined}
+      />
+      {closable ? (
+        <span
+          className={cn(
+            "flex",
+            !active && "opacity-0 group-hover/tab:opacity-100 focus-within:opacity-100",
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="icon-micro"
+            aria-label={`Close tab ${title}`}
+            title="Close tab"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onClose}
+          >
+            <XIcon />
+          </Button>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function PaneTabTitle({
+  title,
+  strip,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  strip: boolean;
+  expanded: boolean;
+  /** Set on the active tab, whose title folds and unfolds the pane. */
+  onToggle: (() => void) | undefined;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="button"
+            tabIndex={0}
+            aria-expanded={onToggle ? expanded : undefined}
+            className={cn(
+              "min-w-0 cursor-pointer truncate rounded-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              strip && "min-h-0 [writing-mode:vertical-rl]",
+            )}
+            data-chat-pane-title
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onToggle?.();
+            }}
+          />
+        }
+      >
+        {title}
+      </TooltipTrigger>
+      <TooltipPopup side={strip ? "right" : "bottom"}>{title}</TooltipPopup>
+    </Tooltip>
+  );
+}
 
 /**
  * The gutter between two panes. The live ratio goes straight to the
@@ -523,6 +682,7 @@ function ResizeHandle({
     onCommit(dragged);
   };
   // An unmount mid-drag never sees the release, so the body styles go with it.
+  // oxlint-disable-next-line t3code/react-effect-budget -- restores body styles a resize left behind
   useEffect(
     () => () => {
       if (ratioRef.current === null) return;
