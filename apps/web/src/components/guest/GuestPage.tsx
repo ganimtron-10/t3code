@@ -342,6 +342,7 @@ function NameForm({
 // see isGuestPage.
 const GUEST_ENVIRONMENT_ID = EnvironmentId.make("guest");
 const NO_COMPOSER = createRef<ChatComposerHandle>();
+const OWNS_INPUT = { current: true } as const;
 const NO_TURN_DIFFS: ReadonlyArray<never> = [];
 const NO_OPTIMISTIC_MESSAGES: ReadonlyArray<never> = [];
 const ignore = () => {};
@@ -404,6 +405,7 @@ function GuestThread({
     timelineEntries: entries,
     timelineAnchorMessageId: null,
     setTimelineAnchor: ignore,
+    inputOwnerRef: OWNS_INPUT,
   });
   const renderHtmlRender = useStableCallback(
     (row: Extract<TimelineRow, { kind: "html-render" }>) => (
