@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  AgentProfileId,
   type ModelSelection,
   NodeId,
   RunId,
@@ -77,6 +78,23 @@ function makeParentThread(): OrchestrationV2AppThread {
     historyOrigin: "v1_import",
   };
 }
+
+it("does not hand the parent's agent profile to a subagent child", () => {
+  const childThread = makeSubagentChildThread({
+    parentThread: { ...makeParentThread(), agentProfileId: AgentProfileId.make("chief") },
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Scoped child",
+    now: childCreatedAt,
+    createdBy: "agent",
+    creationSource: "provider",
+  });
+
+  assert.isUndefined(childThread.agentProfileId);
+});
 
 it("keeps a subagent child awake when its parent thread is snoozed", () => {
   const parentThread = makeParentThread();

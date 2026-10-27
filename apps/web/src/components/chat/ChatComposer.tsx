@@ -29,6 +29,8 @@ import type {
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
+  AgentProfile,
+  AgentProfileId,
 } from "@t3tools/contracts";
 import {
   EnvironmentRequestInvalidError,
@@ -506,6 +508,10 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  /** Non-empty only while the thread is still a draft, before the provider sees it. */
+  agentProfiles?: ReadonlyArray<AgentProfile>;
+  agentProfileId?: AgentProfileId | null;
+  onAgentProfileChange?: (profile: AgentProfile | null) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -615,6 +621,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    agentProfiles,
+    agentProfileId = null,
+    onAgentProfileChange,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -2541,6 +2550,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onModelPickerOpenChange={setIsComposerModelPickerOpen}
       modelPickerIconClassName={composerProviderState.modelPickerIconClassName}
       getModelDisabledReason={getModelDisabledReason}
+      {...(agentProfiles && agentProfiles.length > 0 && onAgentProfileChange
+        ? { agentProfiles, agentProfileId, onAgentProfileChange }
+        : {})}
     />
   );
   // An open approval or question owns the space above the composer. Only a machine problem,

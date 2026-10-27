@@ -18,6 +18,7 @@ import {
   type ProjectIconOverride,
   type ProjectScript,
   type ProviderApprovalDecision,
+  type AgentProfileId,
   type ProviderInteractionMode,
   type ProviderUserInputAnswers,
   type RunId,
@@ -148,6 +149,7 @@ interface StartThreadBootstrap {
     readonly modelSelection: ModelSelection;
     readonly runtimeMode: RuntimeMode;
     readonly interactionMode: ProviderInteractionMode;
+    readonly agentProfileId?: AgentProfileId;
     readonly branch: string | null;
     readonly worktreePath: string | null;
     readonly createdAt: string;
@@ -722,6 +724,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       modelSelection: input.modelSelection ?? thread.modelSelection,
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
+      ...(bootstrap?.agentProfileId === undefined
+        ? {}
+        : { agentProfileId: bootstrap.agentProfileId }),
       workspaceStrategy,
       initialMessage: {
         messageId: input.message.messageId,
