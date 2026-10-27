@@ -237,6 +237,47 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isDefined(withT3.additionalContext?.["t3_code_runtime"]);
     }),
   );
+
+  it.effect("sends agent profile instructions as application context only when set", () =>
+    Effect.gen(function* () {
+      const base = {
+        nativeThreadId: "native-agent-profile",
+        codexInput: [{ type: "text" as const, text: "review this" }],
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: null,
+        } as const,
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      };
+      const withProfile = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        ...base,
+        agentInstructions: "You are QA (Verifies the change).",
+      });
+      assert.deepEqual(withProfile.additionalContext, {
+        t3_agent_profile_01: { kind: "application", value: "You are QA (Verifies the change)." },
+      });
+      const long = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        ...base,
+        agentInstructions: Array.from({ length: 12 }, (_, i) => `${i} ${"é".repeat(700)}`).join(
+          "\n\n",
+        ),
+      });
+      const values = Object.entries(long.additionalContext ?? {})
+        .filter(([key]) => key.startsWith("t3_agent_profile_"))
+        .map(([, entry]) => entry.value);
+      assert.isAbove(values.length, 1);
+      for (const value of values) {
+        assert.isAtMost(new TextEncoder().encode(value).length, 4_000);
+      }
+      assert.equal(
+        values.join("\n\n"),
+        Array.from({ length: 12 }, (_, i) => `${i} ${"é".repeat(700)}`).join("\n\n"),
+      );
+      const without = yield* CodexAdapterV2.buildCodexTurnStartParams(base);
+      assert.isUndefined(without.additionalContext);
+    }),
+  );
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {

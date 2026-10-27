@@ -233,6 +233,45 @@ function makeClaudeTestTurnInput(input: {
 }
 
 describe("ClaudeAdapterV2 runtime query policy", () => {
+  it("appends agent profile instructions to the system prompt only when set", () => {
+    const base = {
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "profile-thread",
+      resume: false,
+      cwd: "/workspace",
+    };
+    const plain = ClaudeAdapterV2.makeClaudeQueryOptions(base);
+    const withProfile = ClaudeAdapterV2.makeClaudeQueryOptions({
+      ...base,
+      agentInstructions: "You are Developer (Writes the code).",
+    });
+    const appendOf = (prompt: typeof plain.systemPrompt) =>
+      typeof prompt === "object" && !Array.isArray(prompt) && prompt.type === "preset"
+        ? prompt.append
+        : undefined;
+    assert.notInclude(appendOf(plain.systemPrompt) ?? "", "You are Developer");
+    assert.equal(
+      appendOf(withProfile.systemPrompt),
+      `${appendOf(plain.systemPrompt)}\n\nYou are Developer (Writes the code).`,
+    );
+  });
+
+  it("reopens the Claude process when the profile's rules change, and only then", () => {
+    const policy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      CLAUDE_TEST_RUNTIME_POLICY,
+    );
+    const plain = ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {});
+    assert.equal(ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, undefined), plain);
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, "You are QA."),
+      plain,
+    );
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, "You are QA."),
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(policy, {}, "You are Infra."),
+    );
+  });
+
   it.each([
     ["--permission-mode acceptEdits", "acceptEdits"],
     ["--dangerously-skip-permissions", "bypassPermissions"],

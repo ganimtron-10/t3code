@@ -50,6 +50,9 @@ import {
   type OrchestratorMcpThreadRun,
   type OrchestratorMcpThreadSendInput,
   type OrchestratorMcpThreadSendResult,
+  type OrchestratorMcpTeamListResult,
+  type AgentProfileId,
+  findAgentProfile,
   type OrchestratorMcpThreadTimelineItem,
   type OrchestratorMcpThreadWaitInput,
   type OrchestratorMcpThreadWaitResult,
@@ -105,6 +108,12 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import {
+  pairCapRejection,
+  TEAM_MAX_MEMBERS,
+  TEAM_PAIR_MESSAGE_CAP,
+  teamDelegationRejection,
+} from "./AgentTeams.ts";
 import {
   clientRuntimeModeCeiling,
   type McpInvocationScope,
@@ -197,6 +206,9 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadWaitInput,
   ) => Effect.Effect<OrchestratorMcpThreadWaitResult, OrchestratorMcpFailure>;
+  readonly listTeam: (
+    scope: McpInvocationScope,
+  ) => Effect.Effect<OrchestratorMcpTeamListResult, OrchestratorMcpFailure>;
   readonly interruptThread: (
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadInterruptInput,
@@ -1308,6 +1320,45 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.mapError(threadManagementFailure));
 
+  const loadAgentProfiles = serverSettings.getSettings.pipe(
+    Effect.map((settings) => settings.agentProfiles),
+    Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
+  );
+
+  const loadTeamProfile = Effect.fn("OrchestratorMcpService.loadTeamProfile")(function* (
+    parent: Pick<OrchestrationV2ThreadProjection, "thread" | "subagents">,
+    agentProfileId: AgentProfileId,
+    isRetry: boolean,
+  ) {
+    const profiles = yield* loadAgentProfiles;
+    const profile = findAgentProfile(profiles, agentProfileId);
+    if (profile === undefined) {
+      return yield* failure(
+        "invalid_request",
+        `Unknown agent profile "${agentProfileId}". Available: ${profiles.map((candidate) => candidate.id).join(", ") || "none"}.`,
+      );
+    }
+    // A retry of an accepted delegation already counts its own child.
+    if (isRetry) return profile;
+    let members = 0;
+    for (const task of parent.subagents) {
+      if (
+        task.origin !== "app_owned" ||
+        task.childThreadId === null ||
+        ["completed", "failed", "cancelled", "interrupted"].includes(task.status)
+      ) {
+        continue;
+      }
+      const child = yield* threadManagement
+        .getThreadRecords(task.childThreadId, [])
+        .pipe(Effect.mapError(threadManagementFailure));
+      if (child.thread.agentProfileId !== undefined) members += 1;
+    }
+    const limitRejection = teamDelegationRejection(parent.thread, members);
+    if (limitRejection !== undefined) return yield* failure("invalid_request", limitRejection);
+    return profile;
+  });
+
   const resolveTargetRechecking = (input: Parameters<typeof resolveTarget>[0]) => {
     const instanceId =
       input.target?.providerInstanceId ??
@@ -2156,20 +2207,34 @@ const make = Effect.gen(function* () {
         operation: "delegate-task",
       });
       const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
+      const profile =
+        input.agentProfileId === undefined
+          ? undefined
+          : yield* loadTeamProfile(parent, input.agentProfileId, isRetryOfAcceptedDelegation);
       const target = yield* resolveTargetRechecking({
         parent,
-        target: input.target,
+        target:
+          input.target ??
+          (profile?.modelSelection
+            ? {
+                providerInstanceId: profile.modelSelection.instanceId,
+                model: profile.modelSelection.model,
+                ...(profile.modelSelection.options === undefined
+                  ? {}
+                  : { options: profile.modelSelection.options }),
+              }
+            : undefined),
         providers,
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
       });
       const runtimeMode = yield* resolveRuntimeMode(
         parent.thread.runtimeMode,
-        input.runtimeMode,
+        input.runtimeMode ?? profile?.runtimeMode ?? undefined,
         target,
       );
       const interactionMode = yield* resolveInteractionMode(
         parent.thread.interactionMode,
-        input.interactionMode,
+        input.interactionMode ?? profile?.interactionMode ?? undefined,
       );
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
@@ -2219,6 +2284,7 @@ const make = Effect.gen(function* () {
           runtimeMode,
           interactionMode,
           ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
+          ...(profile === undefined ? {} : { agentProfileId: profile.id }),
           // Async delegations wake the parent on every child terminal; wait
           // delegations deliver through the blocking tool call, so a wake is
           // only needed if the parent settled first (timeout, disconnect).
@@ -2825,14 +2891,20 @@ const make = Effect.gen(function* () {
         requestKey: key,
         operation: "thread-send",
       });
+      const sendCommandId = stableCommandId({
+        scope,
+        requestKey: key,
+        operation: "thread-send",
+      });
+      const capRejection = parent === undefined ? undefined : pairCapRejection(parent, target);
+      // A retry of an accepted send already counts its own message.
+      if (capRejection !== undefined && !(yield* threadManagement.hasReceipt(sendCommandId))) {
+        return yield* failure("invalid_request", capRejection);
+      }
       const result = yield* threadManagement
         .sendToThread({
           projectId: target.thread.projectId,
-          commandId: stableCommandId({
-            scope,
-            requestKey: key,
-            operation: "thread-send",
-          }),
+          commandId: sendCommandId,
           threadId: input.threadId,
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
           messageId,
@@ -2861,6 +2933,50 @@ const make = Effect.gen(function* () {
         status: result.run.status,
         delivery: result.delivery,
       } satisfies OrchestratorMcpThreadSendResult;
+    }),
+    listTeam: Effect.fn("OrchestratorMcpService.listTeam")(function* (callerScope) {
+      const { parent } = yield* loadThreadCaller(callerScope, "t3_team_list");
+      const rootThreadId = parent.thread.lineage.rootThreadId;
+      const root =
+        rootThreadId === parent.thread.id ? parent : yield* loadTargetThread(rootThreadId);
+      const profiles = yield* loadAgentProfiles;
+      const describe = (thread: OrchestrationV2ThreadProjection["thread"]) => {
+        const profile = findAgentProfile(profiles, thread.agentProfileId);
+        return {
+          threadId: thread.id,
+          title: thread.title,
+          agentProfileId: thread.agentProfileId ?? null,
+          name: profile?.name ?? null,
+          role: profile?.role ?? null,
+        };
+      };
+      const members = [];
+      for (const task of root.subagents) {
+        if (task.origin !== "app_owned" || task.childThreadId === null) continue;
+        const child = yield* threadManagement
+          .getThreadRecords(task.childThreadId, [])
+          .pipe(Effect.mapError(threadManagementFailure));
+        if (child.thread.agentProfileId === undefined) continue;
+        members.push({ ...describe(child.thread), isChief: false, status: task.status });
+      }
+      return {
+        rootThreadId,
+        members: [
+          {
+            ...describe(root.thread),
+            isChief: true,
+            status: ThreadManagementService.latestActiveRun(root)?.status ?? "idle",
+          },
+          ...members,
+        ],
+        profiles: profiles.map((profile) => ({
+          id: profile.id,
+          name: profile.name,
+          role: profile.role,
+        })),
+        maxMembers: TEAM_MAX_MEMBERS,
+        pairMessageCap: TEAM_PAIR_MESSAGE_CAP,
+      } satisfies OrchestratorMcpTeamListResult;
     }),
     waitForThread: Effect.fn("OrchestratorMcpService.waitForThread")(function* (scope, input) {
       const { parent, target } = yield* loadScopedThread(scope, input.threadId);

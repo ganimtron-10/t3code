@@ -9,6 +9,47 @@ import {
 /** Codex silently truncates additionalContext values over 1,000 tokens, counted as UTF-8 bytes / 4. */
 export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 
+const encoder = new TextEncoder();
+
+/** Splits text into pieces that each fit Codex's per-value cap, preferring paragraph breaks. */
+export function splitCodexAdditionalContextValue(
+  text: string,
+  maxBytes = CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
+): ReadonlyArray<string> {
+  const pieces: Array<string> = [];
+  let current = "";
+  let currentBytes = 0;
+  for (const paragraph of text.split("\n\n")) {
+    const bytes = encoder.encode(paragraph).length;
+    const joinedBytes = current === "" ? bytes : currentBytes + 2 + bytes;
+    if (joinedBytes <= maxBytes) {
+      current = current === "" ? paragraph : `${current}\n\n${paragraph}`;
+      currentBytes = joinedBytes;
+      continue;
+    }
+    if (current !== "") pieces.push(current);
+    current = "";
+    currentBytes = 0;
+    if (bytes <= maxBytes) {
+      current = paragraph;
+      currentBytes = bytes;
+      continue;
+    }
+    for (const char of paragraph) {
+      const charBytes = encoder.encode(char).length;
+      if (currentBytes + charBytes > maxBytes) {
+        pieces.push(current);
+        current = "";
+        currentBytes = 0;
+      }
+      current += char;
+      currentBytes += charBytes;
+    }
+  }
+  if (current !== "") pieces.push(current);
+  return pieces;
+}
+
 const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## T3 Code devices
 
 For iOS Simulators and Android Emulators here, call \`device_list\`, then \`device_open\`. Drive the device with the exact \`agent-device\` launcher and flags it returns, on every command. Prefer \`agent-device snapshot -i\` refs over coordinates. Use \`device_screenshot\` to see the screen. Use \`xcrun simctl\` or \`adb\` only for builds, logs, and ports. If a platform is unavailable, say so.`;
