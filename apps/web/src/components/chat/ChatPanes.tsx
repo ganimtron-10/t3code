@@ -367,10 +367,9 @@ const PaneLeaf = memo(function PaneLeaf({
   const close = useStableCallback(() => follow(closePane(leaf.id, routeThreadRef), true));
   const closeTab = (tab: ScopedThreadRef) => follow(closeThreadPane(tab, routeThreadRef), true);
   const toggleCollapsed = () => follow(togglePaneCollapsed(leaf.id, routeThreadRef));
-  // A new thread joins the focused pane, so focus this one before the picker opens.
+  // A new thread joins the focused pane; following this pane's thread focuses it.
   const newTab = () => {
     if (!focused) follow(threadRef);
-    focusThreadPane(threadRef);
     openCommandPalette({ open: "new-thread-in" });
   };
   const activeFocused = focused && draftView === undefined;
