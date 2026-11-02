@@ -35,6 +35,7 @@ import {
   togglePaneCollapsed,
   useChatPanesStore,
 } from "~/chatPanesStore";
+import { openCommandPalette } from "~/commandPaletteBus";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { cn } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
@@ -366,6 +367,11 @@ const PaneLeaf = memo(function PaneLeaf({
   const close = useStableCallback(() => follow(closePane(leaf.id, routeThreadRef), true));
   const closeTab = (tab: ScopedThreadRef) => follow(closeThreadPane(tab, routeThreadRef), true);
   const toggleCollapsed = () => follow(togglePaneCollapsed(leaf.id, routeThreadRef));
+  // A new thread joins the focused pane; following this pane's thread focuses it.
+  const newTab = () => {
+    if (!focused) follow(threadRef);
+    openCommandPalette({ open: "new-thread-in" });
+  };
   const activeFocused = focused && draftView === undefined;
   // Upstream's shortcut guards read this context, so a background pane stands down with them.
   const background = use(BackgroundThreadContext) || !focused;
@@ -501,7 +507,6 @@ const PaneLeaf = memo(function PaneLeaf({
                   draftView === undefined && scopedThreadKey(tab) === scopedThreadKey(threadRef)
                 }
                 expanded={fold === undefined}
-                closable={tabs.length > 1 || draftView !== undefined}
                 onToggle={toggleCollapsed}
                 onClose={() => closeTab(tab)}
               />
@@ -520,6 +525,18 @@ const PaneLeaf = memo(function PaneLeaf({
             ) : null}
           </div>
         )}
+        {strip ? null : (
+          <Button
+            variant="ghost"
+            size="icon-micro"
+            aria-label="New tab in this pane"
+            title="New tab"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={newTab}
+          >
+            <PlusIcon />
+          </Button>
+        )}
         {/* The gap after the tabs still moves the window, as the title bar it replaces did. */}
         <span
           aria-hidden
@@ -529,16 +546,19 @@ const PaneLeaf = memo(function PaneLeaf({
             !strip && edges.top && "drag-region",
           )}
         />
-        <Button
-          variant="ghost"
-          size="icon-micro"
-          aria-label={tabs.length > 1 ? "Close pane and its tabs" : `Close pane for ${title}`}
-          title={tabs.length > 1 ? "Close pane and its tabs" : "Close pane"}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={close}
-        >
-          <XIcon />
-        </Button>
+        {/* A lone tab's own close button already closes the pane. */}
+        {strip || tabs.length > 1 || draftView !== undefined ? (
+          <Button
+            variant="ghost"
+            size="icon-micro"
+            aria-label={tabs.length > 1 ? "Close pane and its tabs" : `Close pane for ${title}`}
+            title={tabs.length > 1 ? "Close pane and its tabs" : "Close pane"}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={close}
+          >
+            <XIcon />
+          </Button>
+        ) : null}
       </div>
       {fold ? null : draftView !== undefined ? (
         // The same wrapper as the tab view below, so a promoted draft keeps its ChatView.
@@ -574,14 +594,12 @@ function PaneTab({
   threadRef,
   active,
   expanded,
-  closable,
   onToggle,
   onClose,
 }: {
   threadRef: ScopedThreadRef;
   active: boolean;
   expanded: boolean;
-  closable: boolean;
   onToggle: () => void;
   onClose: () => void;
 }) {
@@ -599,8 +617,7 @@ function PaneTab({
       role="tab"
       aria-selected={active}
       className={cn(
-        "group/tab flex max-w-48 min-w-0 shrink-0 items-center gap-0.5 border-b-2 pl-2",
-        closable ? "pr-0.5" : "pr-2",
+        "group/tab flex max-w-48 min-w-0 shrink-0 items-center gap-0.5 border-b-2 pr-0.5 pl-2",
         active ? "border-b-primary text-foreground" : "border-b-transparent hover:text-foreground",
       )}
       data-chat-pane-tab={scopedThreadKey(threadRef)}
@@ -611,25 +628,23 @@ function PaneTab({
         expanded={expanded}
         onToggle={active ? onToggle : undefined}
       />
-      {closable ? (
-        <span
-          className={cn(
-            "flex",
-            !active && "opacity-0 group-hover/tab:opacity-100 focus-within:opacity-100",
-          )}
+      <span
+        className={cn(
+          "flex",
+          !active && "opacity-0 group-hover/tab:opacity-100 focus-within:opacity-100",
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="icon-micro"
+          aria-label={`Close tab ${title}`}
+          title="Close tab"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onClose}
         >
-          <Button
-            variant="ghost"
-            size="icon-micro"
-            aria-label={`Close tab ${title}`}
-            title="Close tab"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={onClose}
-          >
-            <XIcon />
-          </Button>
-        </span>
-      ) : null}
+          <XIcon />
+        </Button>
+      </span>
     </div>
   );
 }
