@@ -64,7 +64,7 @@ interface ChatPanesState {
   detachedThreadKey: string | null;
   drag: ChatPaneDrag | null;
   setRatio: (splitId: ChatPaneId, ratio: number) => void;
-  equalize: () => void;
+  equalize: (focusedThreadKey: string) => void;
 }
 
 const ThreadRefSchema = Schema.Struct({ environmentId: EnvironmentId, threadId: ThreadId });
@@ -105,10 +105,10 @@ export const useChatPanesStore = create<ChatPanesState>()(
           const root = setPaneRatio(state.root, splitId, ratio);
           return root === state.root ? state : { root };
         }),
-      equalize: () =>
+      equalize: (focusedThreadKey) =>
         set((state) => {
           if (!state.root) return state;
-          const root = equalizePanes(state.root);
+          const root = equalizePanes(state.root, focusedThreadKey);
           return root === state.root ? state : { root };
         }),
     }),

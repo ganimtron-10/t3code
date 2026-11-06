@@ -108,10 +108,11 @@ describe("chat pane tree", () => {
       "s3",
     );
     const skewed = setPaneRatio(setPaneRatio(layout, "s1", 0.8), "s2", 0.2);
-    const even = equalizePanes(skewed);
+    const focus = scopedThreadKey(ref("a"));
+    const even = equalizePanes(skewed, focus);
     expect(even).toMatchObject({ id: "s3", ratio: 2 / 3, first: { id: "s1", ratio: 0.5 } });
     expect(findNode(even, "s2")).toMatchObject({ ratio: 0.5 });
-    expect(equalizePanes(even)).toBe(even);
+    expect(equalizePanes(even, focus)).toBe(even);
   });
 
   it("rejects saved layouts that repeat a pane or thread, or hold too many panes", () => {
@@ -166,6 +167,32 @@ describe("collapsed panes", () => {
     expect(isPaneFolded(right, key("a"))).toBe(true);
     expect(isPaneFolded(right, key("c"))).toBe(false);
     expect(isPaneFolded(setPaneCollapsed(right, "c", false), key("a"))).toBe(false);
+  });
+
+  it("equalizes only the open panes along each axis", () => {
+    const nested = (direction: "horizontal" | "vertical"): ChatPaneNode => ({
+      kind: "split",
+      id: "s1",
+      direction,
+      ratio: 0.2,
+      first: leaf("a"),
+      second: {
+        kind: "split",
+        id: "s2",
+        direction,
+        ratio: 0.5,
+        first: { ...leaf("b"), collapsed: true },
+        second: leaf("c"),
+      },
+    });
+    // a | (b folded | c): a and c split the space instead of a getting a third.
+    expect(equalizePanes(nested("horizontal"), key("a"))).toMatchObject({ ratio: 0.5 });
+    expect(equalizePanes(nested("vertical"), key("a"))).toMatchObject({ ratio: 0.5 });
+    // The folded pane holding the focused thread shows, so it counts.
+    expect(equalizePanes(nested("horizontal"), key("b"))).toMatchObject({ ratio: 1 / 3 });
+    // A side with nothing open is drawn folded; its split keeps the saved ratio.
+    const allFolded = setPaneCollapsed(nested("horizontal"), "c", true);
+    expect(equalizePanes(allFolded, key("a"))).toBe(allFolded);
   });
 
   it("carries the folded flag when a pane moves", () => {

@@ -263,6 +263,7 @@ function PaneNode({
           ratio={node.ratio}
           containerRef={containerRef}
           onCommit={(ratio) => useChatPanesStore.getState().setRatio(splitId, ratio)}
+          onEqualize={() => useChatPanesStore.getState().equalize(routeThreadKey)}
         />
       ) : (
         <div aria-hidden className={cn("shrink-0 bg-border", horizontal ? "w-px" : "h-px")} />
@@ -701,11 +702,13 @@ function ResizeHandle({
   ratio,
   containerRef,
   onCommit,
+  onEqualize,
 }: {
   direction: SplitDirection;
   ratio: number;
   containerRef: React.RefObject<HTMLDivElement | null>;
   onCommit: (ratio: number) => void;
+  onEqualize: () => void;
 }) {
   const ratioRef = useRef<number | null>(null);
   const horizontal = direction === "horizontal";
@@ -786,7 +789,7 @@ function ResizeHandle({
       onPointerUp={end}
       onPointerCancel={end}
       onLostPointerCapture={end}
-      onDoubleClick={() => useChatPanesStore.getState().equalize()}
+      onDoubleClick={onEqualize}
     >
       <span
         aria-hidden

@@ -189,21 +189,35 @@ export function isRestorableLayout(root: ChatPaneNode): boolean {
   return true;
 }
 
-/** How many panes sit side by side along `direction`'s axis inside `node`. */
-export function paneSpan(node: ChatPaneNode, direction: SplitDirection): number {
-  if (node.kind === "leaf") return 1;
-  const first = paneSpan(node.first, direction);
-  const second = paneSpan(node.second, direction);
+/**
+ * How many panes sit side by side along `direction`'s axis inside `node`.
+ * Given the focused thread, folded panes count 0, as they take no share.
+ */
+export function paneSpan(
+  node: ChatPaneNode,
+  direction: SplitDirection,
+  focusedThreadKey?: string,
+): number {
+  if (node.kind === "leaf") {
+    return focusedThreadKey !== undefined && isPaneFolded(node, focusedThreadKey) ? 0 : 1;
+  }
+  const first = paneSpan(node.first, direction, focusedThreadKey);
+  const second = paneSpan(node.second, direction, focusedThreadKey);
   return node.direction === direction ? first + second : Math.max(first, second);
 }
 
-/** Sizes every split so the panes along each axis get equal space. */
-export function equalizePanes(root: ChatPaneNode): ChatPaneNode {
+/** Sizes every split so the open panes along each axis get equal space. */
+export function equalizePanes(root: ChatPaneNode, focusedThreadKey: string): ChatPaneNode {
   if (root.kind === "leaf") return root;
-  const firstSpan = paneSpan(root.first, root.direction);
-  const ratio = clampPaneRatio(firstSpan / (firstSpan + paneSpan(root.second, root.direction)));
-  const first = equalizePanes(root.first);
-  const second = equalizePanes(root.second);
+  const firstSpan = paneSpan(root.first, root.direction, focusedThreadKey);
+  const secondSpan = paneSpan(root.second, root.direction, focusedThreadKey);
+  // A side with nothing open is drawn folded, so its ratio only matters once it unfolds.
+  const ratio =
+    firstSpan === 0 || secondSpan === 0
+      ? root.ratio
+      : clampPaneRatio(firstSpan / (firstSpan + secondSpan));
+  const first = equalizePanes(root.first, focusedThreadKey);
+  const second = equalizePanes(root.second, focusedThreadKey);
   return ratio === root.ratio && first === root.first && second === root.second
     ? root
     : { ...root, ratio, first, second };
