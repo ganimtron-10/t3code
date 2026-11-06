@@ -113,6 +113,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
+  areTeamSiblings,
   pairCapRejection,
   TEAM_MAX_MEMBERS,
   TEAM_PAIR_MESSAGE_CAP,
@@ -1327,8 +1328,17 @@ const make = Effect.gen(function* () {
     Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
   );
 
+  // The caller projection skips subagents and the caller's own messages, so team checks read their own.
+  const loadTeamRecords = <K extends "subagents" | "runs" | "messages">(
+    threadId: ThreadId,
+    kinds: ReadonlyArray<K>,
+  ) =>
+    threadManagement
+      .getThreadRecords(threadId, kinds, { messageRoles: ["user"] })
+      .pipe(Effect.mapError(threadManagementFailure));
+
   const loadTeamProfile = Effect.fn("OrchestratorMcpService.loadTeamProfile")(function* (
-    parent: Pick<OrchestrationV2ThreadProjection, "thread" | "subagents">,
+    parent: Pick<OrchestrationV2ThreadProjection, "thread">,
     agentProfileId: AgentProfileId,
     isRetry: boolean,
   ) {
@@ -1343,7 +1353,8 @@ const make = Effect.gen(function* () {
     // A retry of an accepted delegation already counts its own child.
     if (isRetry) return profile;
     let members = 0;
-    for (const task of parent.subagents) {
+    const { subagents } = yield* loadTeamRecords(parent.thread.id, ["subagents"]);
+    for (const task of subagents) {
       if (
         task.origin !== "app_owned" ||
         task.childThreadId === null ||
@@ -3224,7 +3235,13 @@ const make = Effect.gen(function* () {
         requestKey: key,
         operation: "thread-send",
       });
-      const capRejection = parent === undefined ? undefined : pairCapRejection(parent, target);
+      const capRejection =
+        parent === undefined || !areTeamSiblings(parent.thread, target.thread)
+          ? undefined
+          : pairCapRejection(
+              yield* loadTeamRecords(parent.thread.id, ["messages"]),
+              yield* loadTeamRecords(target.thread.id, ["messages"]),
+            );
       // A retry of an accepted send already counts its own message.
       if (capRejection !== undefined && !(yield* threadManagement.hasReceipt(sendCommandId))) {
         return yield* failure("invalid_request", capRejection);
@@ -3266,8 +3283,7 @@ const make = Effect.gen(function* () {
     listTeam: Effect.fn("OrchestratorMcpService.listTeam")(function* (callerScope) {
       const { parent } = yield* loadThreadCaller(callerScope, "t3_team_list");
       const rootThreadId = parent.thread.lineage.rootThreadId;
-      const root =
-        rootThreadId === parent.thread.id ? parent : yield* loadTargetThread(rootThreadId);
+      const root = yield* loadTeamRecords(rootThreadId, ["subagents", "runs"]);
       const profiles = yield* loadAgentProfiles;
       const describe = (thread: OrchestrationV2ThreadProjection["thread"]) => {
         const profile = findAgentProfile(profiles, thread.agentProfileId);
