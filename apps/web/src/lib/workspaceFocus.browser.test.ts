@@ -68,6 +68,16 @@ describe("workspace area focus", () => {
     expect(document.activeElement).toBe(sidebar.button);
   });
 
+  it("focuses the focused split pane's area, not a background pane's", () => {
+    using fixture = setup();
+    const background = fixture.append('<div data-chat-pane-focused="false"></div>');
+    const focused = fixture.append('<div data-chat-pane-focused="true"></div>');
+    fixture.area("panel", 3, background);
+    const panel = fixture.area("panel", 3, focused);
+    expect(fixture.controller.focus("panel")).toBe(true);
+    expect(document.activeElement).toBe(panel.button);
+  });
+
   it("restores the last focused control and falls back when it is removed", () => {
     using fixture = setup();
     fixture.area("sidebar", 0);

@@ -1332,9 +1332,13 @@ const make = Effect.gen(function* () {
   const loadTeamRecords = <K extends "subagents" | "runs" | "messages">(
     threadId: ThreadId,
     kinds: ReadonlyArray<K>,
+    activeOnly = false,
   ) =>
     threadManagement
-      .getThreadRecords(threadId, kinds, { messageRoles: ["user"] })
+      .getThreadRecords(threadId, kinds, {
+        messageRoles: ["user"],
+        ...(activeOnly ? { omitSettledSubagents: true as const } : {}),
+      })
       .pipe(Effect.mapError(threadManagementFailure));
 
   const loadTeamProfile = Effect.fn("OrchestratorMcpService.loadTeamProfile")(function* (
@@ -1353,7 +1357,7 @@ const make = Effect.gen(function* () {
     // A retry of an accepted delegation already counts its own child.
     if (isRetry) return profile;
     let members = 0;
-    const { subagents } = yield* loadTeamRecords(parent.thread.id, ["subagents"]);
+    const { subagents } = yield* loadTeamRecords(parent.thread.id, ["subagents"], true);
     for (const task of subagents) {
       if (
         task.origin !== "app_owned" ||
@@ -3284,6 +3288,13 @@ const make = Effect.gen(function* () {
       const { parent } = yield* loadThreadCaller(callerScope, "t3_team_list");
       const rootThreadId = parent.thread.lineage.rootThreadId;
       const root = yield* loadTeamRecords(rootThreadId, ["subagents", "runs"]);
+      if (root.thread.deletedAt !== null) {
+        return yield* threadNotFound(
+          threadManagement,
+          rootThreadId,
+          `Thread ${rootThreadId} was not found.`,
+        );
+      }
       const profiles = yield* loadAgentProfiles;
       const describe = (thread: OrchestrationV2ThreadProjection["thread"]) => {
         const profile = findAgentProfile(profiles, thread.agentProfileId);
