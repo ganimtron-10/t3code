@@ -139,7 +139,7 @@ export function ChatPanes({
   // The focused thread's tab comes forward and a folded pane opens back up.
   // Keyed on the thread, not the ref object, so folding the focused pane
   // isn't undone by a render that lands before the route moves on.
-  // oxlint-disable-next-line t3code/react-effect-budget -- syncs the persisted layout to the route
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted layout to the route
   useEffect(() => {
     const ref = parseScopedThreadKey(routeThreadKey);
     if (ref) focusThreadPane(ref);
@@ -379,13 +379,13 @@ const PaneLeaf = memo(function PaneLeaf({
   // A background thread deleted elsewhere takes its tab with it. The route
   // thread's tab is closed by ThreadRouteView, which also picks where to go.
   const closeDeletedTab = useStableCallback(() => closeThreadPane(threadRef, routeThreadRef));
-  // oxlint-disable-next-line t3code/react-effect-budget -- reacts to a deletion pushed by the server
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reacts to a deletion pushed by the server
   useEffect(() => {
     if (deleted && !activeFocused) closeDeletedTab();
   }, [activeFocused, closeDeletedTab, deleted]);
 
   const cancelDragRef = useRef<(() => void) | null>(null);
-  // oxlint-disable-next-line t3code/react-effect-budget -- ends a header drag still running at unmount
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ends a header drag still running at unmount
   useEffect(() => () => cancelDragRef.current?.(), []);
 
   const onHeaderPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
@@ -607,7 +607,7 @@ function PaneTab({
   const title = shell?.title ?? "Thread";
   const deleted = shell?.deletedAt != null;
   const closeDeleted = useStableCallback(onClose);
-  // oxlint-disable-next-line t3code/react-effect-budget -- reacts to a deletion pushed by the server
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reacts to a deletion pushed by the server
   useEffect(() => {
     if (deleted && !active) closeDeleted();
   }, [active, closeDeleted, deleted]);
@@ -730,7 +730,7 @@ function ResizeHandle({
     onCommit(dragged);
   };
   // An unmount mid-drag never sees the release, so the body styles go with it.
-  // oxlint-disable-next-line t3code/react-effect-budget -- restores body styles a resize left behind
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores body styles a resize left behind
   useEffect(
     () => () => {
       if (ratioRef.current === null) return;
