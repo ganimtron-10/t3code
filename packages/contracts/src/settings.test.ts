@@ -42,14 +42,9 @@ const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
 describe("agent profiles", () => {
-  it("seeds the four built-in profiles and keeps an emptied list empty", () => {
-    expect(DEFAULT_SERVER_SETTINGS.agentProfiles.map((profile) => profile.id)).toEqual([
-      "chief",
-      "developer",
-      "qa",
-      "infra",
-    ]);
-    expect(decodeServerSettings({ agentProfiles: [] }).agentProfiles).toEqual([]);
+  it("ships no bots, so a fresh install starts with an empty list", () => {
+    expect(DEFAULT_SERVER_SETTINGS.agentProfiles).toEqual([]);
+    expect(decodeServerSettings({}).agentProfiles).toEqual([]);
   });
 
   it("fills optional profile fields and round-trips an edited profile", () => {

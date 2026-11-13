@@ -36,42 +36,57 @@ export const AgentProfile = Schema.Struct({
 });
 export type AgentProfile = typeof AgentProfile.Type;
 
-const decodeAgentProfile = Schema.decodeSync(AgentProfile);
+/** No bots ship by default; users create their own in Settings > Agents. */
+export const DEFAULT_AGENT_PROFILES: ReadonlyArray<AgentProfile> = [];
 
-export const DEFAULT_AGENT_PROFILES: ReadonlyArray<AgentProfile> = [
-  decodeAgentProfile({
-    id: "chief",
-    name: "Chief",
-    avatar: "🧭",
-    role: "Leads the team",
-    instructions:
-      "You lead a team of agents: Developer, QA and Infra. Plan the work, split it into scoped tasks, and delegate each task to the member who owns it with delegate_task, setting agentProfileId to developer, qa or infra. Members can message each other with t3_thread_send; t3_team_list shows who is on the team. Read each result, then decide the next step or ask the user. Do member work yourself only when it is trivial.",
-  }),
-  decodeAgentProfile({
-    id: "developer",
-    name: "Developer",
-    avatar: "🛠️",
-    role: "Writes the code",
-    instructions:
-      "You are the team's Developer. Implement the task you are given with the smallest complete change, run the tests that cover it, and report what changed, where, and how you verified it.",
-  }),
-  decodeAgentProfile({
-    id: "qa",
-    name: "QA",
-    avatar: "🔎",
-    role: "Verifies the change",
-    instructions:
-      "You are the team's QA. Verify the change you are given through its real entry point, including edge cases and failure paths. Report pass or fail with the exact commands and their output. Report problems to whoever sent the task instead of fixing the code yourself.",
-  }),
-  decodeAgentProfile({
-    id: "infra",
-    name: "Infra",
-    avatar: "🏗️",
-    role: "Owns build, CI and runtime",
-    instructions:
-      "You are the team's Infra engineer. Own build, CI, deploy and runtime configuration for the task. Prefer read-only checks and written plans. Never change shared or production systems without the user's explicit approval. Report the commands you ran and their output.",
-  }),
-];
+/** A bot id is its @handle and its folder name under `<T3 home>/agents`. */
+export const AGENT_BOT_ID_MAX_LENGTH = 64;
+const AGENT_BOT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+
+export function isAgentBotId(value: string): boolean {
+  return value.length <= AGENT_BOT_ID_MAX_LENGTH && AGENT_BOT_ID_PATTERN.test(value);
+}
+
+export const AgentBotId = Schema.String.check(
+  Schema.isMaxLength(AGENT_BOT_ID_MAX_LENGTH),
+  Schema.isPattern(AGENT_BOT_ID_PATTERN),
+);
+
+export const AGENT_SOUL_MAX_LENGTH = AGENT_PROFILE_INSTRUCTIONS_MAX_LENGTH;
+
+export const AgentSoulTarget = Schema.Struct({ id: AgentBotId });
+export const AgentSoulReadResult = Schema.Struct({ content: Schema.NullOr(Schema.String) });
+export const AgentSoulWriteInput = Schema.Struct({
+  id: AgentBotId,
+  content: Schema.String.check(Schema.isMaxLength(AGENT_SOUL_MAX_LENGTH)),
+});
+
+export class AgentSoulError extends Schema.TaggedError<AgentSoulError>()("AgentSoulError", {
+  id: Schema.String,
+  operation: Schema.Literals(["read", "write", "remove"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
+  override get message(): string {
+    return `Could not ${this.operation} SOUL.md for bot "${this.id}".`;
+  }
+}
+
+const AGENT_MENTION_REGEX =
+  /(?:^|[\s(])@([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?=$|\s|[.,;:!?)](?:\s|$))/g;
+
+/** Profiles a message tags with `@<id>`, in first-mention order, each once. */
+export function parseAgentMentions(
+  text: string,
+  profiles: ReadonlyArray<AgentProfile>,
+): ReadonlyArray<AgentProfile> {
+  if (profiles.length === 0 || !text.includes("@")) return [];
+  const mentioned: Array<AgentProfile> = [];
+  for (const match of text.matchAll(AGENT_MENTION_REGEX)) {
+    const profile = profiles.find((candidate) => candidate.id === match[1]);
+    if (profile !== undefined && !mentioned.includes(profile)) mentioned.push(profile);
+  }
+  return mentioned;
+}
 
 export function findAgentProfile(
   profiles: ReadonlyArray<AgentProfile>,

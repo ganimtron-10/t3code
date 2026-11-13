@@ -1206,6 +1206,18 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    readAgentSoul: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:read-agent-soul",
+      tag: WS_METHODS.agentSoulsRead,
+    }),
+    writeAgentSoul: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:write-agent-soul",
+      tag: WS_METHODS.agentSoulsWrite,
+    }),
+    removeAgentSoul: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:remove-agent-soul",
+      tag: WS_METHODS.agentSoulsRemove,
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,

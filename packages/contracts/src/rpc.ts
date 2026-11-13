@@ -33,6 +33,12 @@ import {
   ChatGptHandoffInput,
   ChatGptHandoffState,
 } from "./providerSetup.ts";
+import {
+  AgentSoulError,
+  AgentSoulReadResult,
+  AgentSoulTarget,
+  AgentSoulWriteInput,
+} from "./agentProfile.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -514,6 +520,9 @@ export const WS_METHODS = {
   peerLinksUnlink: "peerLinks.unlink",
   peerLinksAnswerRequest: "peerLinks.answerRequest",
   serverUpdateSettings: "server.updateSettings",
+  agentSoulsRead: "agentSouls.read",
+  agentSoulsWrite: "agentSouls.write",
+  agentSoulsRemove: "agentSouls.remove",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
   serverPrepareAcpRegistryAgent: "server.prepareAcpRegistryAgent",
@@ -830,6 +839,22 @@ const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
   }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentSoulsReadRpc = Rpc.make(WS_METHODS.agentSoulsRead, {
+  payload: AgentSoulTarget,
+  success: AgentSoulReadResult,
+  error: Schema.Union([AgentSoulError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentSoulsWriteRpc = Rpc.make(WS_METHODS.agentSoulsWrite, {
+  payload: AgentSoulWriteInput,
+  error: Schema.Union([AgentSoulError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentSoulsRemoveRpc = Rpc.make(WS_METHODS.agentSoulsRemove, {
+  payload: AgentSoulTarget,
+  error: Schema.Union([AgentSoulError, EnvironmentAuthorizationError]),
 });
 
 const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -2029,6 +2054,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsServerUpdateSettingsRpc,
+  WsAgentSoulsReadRpc,
+  WsAgentSoulsWriteRpc,
+  WsAgentSoulsRemoveRpc,
   WsPeerLinksListRpc,
   WsPeerLinksLinkRpc,
   WsPeerLinksUnlinkRpc,
