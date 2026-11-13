@@ -2,6 +2,7 @@ import { makeAssistantStreamingFilter } from "./assistantStreaming.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   isOrchestrationV2WorkActive,
+  findAgentProfile,
   CommandId,
   type EventId,
   type ModelSelection,
@@ -40,7 +41,8 @@ import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { resolveAgentInstructions } from "../provider/AgentProfileInstructions.ts";
+import { agentProfileInstructions } from "../provider/AgentProfileInstructions.ts";
+import * as AgentSouls from "../provider/AgentSouls.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -600,6 +602,7 @@ export const layer: Layer.Layer<
   | IdAllocator.IdAllocatorV2
   | ProviderEventIngestor.ProviderEventIngestorV2
   | ServerSettings.ServerSettingsService
+  | AgentSouls.AgentSouls
   | McpAppModelContext.McpAppModelContext
   | PreviewAgentActivity.PreviewAgentActivity
   | TurnItemPositionStore.TurnItemPositionStoreV2
@@ -612,6 +615,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const agentSouls = yield* AgentSouls.AgentSouls;
     const mcpAppModelContext = yield* McpAppModelContext.McpAppModelContext;
     const previewAgentActivity = yield* PreviewAgentActivity.PreviewAgentActivity;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
@@ -1692,18 +1696,34 @@ export const layer: Layer.Layer<
           key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
           text: entry.text,
         }));
-        const agentInstructions =
+        const agentProfile =
           input.appThread.agentProfileId === undefined
             ? undefined
             : yield* serverSettings.getSettings.pipe(
                 Effect.map((settings) =>
-                  resolveAgentInstructions(settings.agentProfiles, input.appThread.agentProfileId),
+                  findAgentProfile(settings.agentProfiles, input.appThread.agentProfileId),
                 ),
                 Effect.catch((cause) =>
                   Effect.logWarning("Failed to read agent profiles.", { cause }).pipe(
                     Effect.as(undefined),
                   ),
                 ),
+              );
+        // Read on every turn so a SOUL.md edited on disk applies to the next turn.
+        const agentInstructions =
+          agentProfile === undefined
+            ? undefined
+            : agentProfileInstructions(
+                agentProfile,
+                yield* agentSouls
+                  .read(agentProfile.id)
+                  .pipe(
+                    Effect.catch((cause) =>
+                      Effect.logWarning("Failed to read the agent's SOUL.md.", { cause }).pipe(
+                        Effect.as(null),
+                      ),
+                    ),
+                  ),
               );
         const turnInput = {
           appThread: input.appThread,

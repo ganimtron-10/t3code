@@ -115,6 +115,7 @@ import { FileTagChipContent } from "./chat/FileTagChip";
 import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineText";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
+import { AgentBotAvatar } from "./AgentBotAvatar";
 import { ContextChip } from "./ContextChip";
 import {
   ComposerContextActionsContext,
@@ -264,6 +265,23 @@ const ComposerMentionExtension = Node.create({
 function ComposerMentionNodeView({ node }: NodeViewProps) {
   const actions = use(ComposerContextActionsContext);
   const path = (node.attrs.path as string) ?? "";
+  const bot = actions.agentProfiles?.find((profile) => profile.id === path);
+  if (bot) {
+    return (
+      <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
+        <ContextChip
+          kind="mention"
+          contentEditable={false}
+          spellCheck={false}
+          data-composer-agent-chip="true"
+          title={bot.role === "" ? bot.name : `${bot.name}: ${bot.role}`}
+        >
+          <AgentBotAvatar profile={bot} size="xs" />
+          {bot.name}
+        </ContextChip>
+      </NodeViewWrapper>
+    );
+  }
   const chip = (
     <ContextChip
       kind={documentChipKindForFileName(path) ?? "mention"}

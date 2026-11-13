@@ -1,12 +1,12 @@
 import {
+  type AgentProfile,
   AgentProfileId,
-  DEFAULT_AGENT_PROFILES,
   type OrchestrationV2AppThread,
   ThreadId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
-import { agentSenderHeader, withAgentSenderHeader } from "./AgentSenderHeader.ts";
+import { agentMentionNote, agentSenderHeader, withAgentSenderHeader } from "./AgentSenderHeader.ts";
 
 const thread = (id: string, profile?: string) =>
   ({
@@ -15,6 +15,7 @@ const thread = (id: string, profile?: string) =>
     ...(profile === undefined ? {} : { agentProfileId: AgentProfileId.make(profile) }),
   }) as OrchestrationV2AppThread;
 
+const profiles = [{ id: "qa", name: "QA" }] as unknown as ReadonlyArray<AgentProfile>;
 const qa = thread("thread:qa", "qa");
 const developer = thread("thread:developer", "developer");
 
@@ -24,7 +25,7 @@ describe("agentSenderHeader", () => {
       message: { createdBy: "agent", senderThreadId: qa.id },
       recipient: developer,
       sender: qa,
-      profiles: DEFAULT_AGENT_PROFILES,
+      profiles,
     });
     assert.equal(header, "[From QA (thread thread:qa)]");
     assert.equal(withAgentSenderHeader("Run the tests.", header), `${header}\n\nRun the tests.`);
@@ -64,5 +65,14 @@ describe("agentSenderHeader", () => {
       }),
     );
     assert.equal(withAgentSenderHeader("text", undefined), "text");
+  });
+});
+
+describe("agentMentionNote", () => {
+  it("names each tagged bot for the thread's own agent, and adds nothing without tags", () => {
+    const note = agentMentionNote(profiles);
+    assert.include(note, "[Tagged bots: QA (@qa).");
+    assert.include(note, "delegated task");
+    assert.isUndefined(agentMentionNote([]));
   });
 });

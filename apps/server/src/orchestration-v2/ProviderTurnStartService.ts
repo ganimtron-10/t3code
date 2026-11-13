@@ -11,6 +11,7 @@ import {
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
   isCompactionCommandMessage,
+  parseAgentMentions,
   parseGoalCommand,
   RunId,
   ThreadId,
@@ -31,7 +32,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { agentSenderHeader, withAgentSenderHeader } from "./AgentSenderHeader.ts";
+import { agentMentionNote, agentSenderHeader, withAgentSenderHeader } from "./AgentSenderHeader.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -847,6 +848,20 @@ export const layer: Layer.Layer<
         message.createdBy === "agent" &&
         message.senderThreadId !== undefined &&
         message.senderThreadId !== projection.thread.id;
+      // Only typed messages in a top-level thread bring bots in; see AgentMentionReactor.
+      const mayTagBots =
+        !goalCommand &&
+        message.createdBy === "user" &&
+        (message.creationSource === "web" || message.creationSource === "mobile") &&
+        projection.thread.lineage.relationshipToParent === null &&
+        message.text.includes("@");
+      const profiles =
+        needsSenderHeader || mayTagBots
+          ? yield* serverSettings.getSettings.pipe(
+              Effect.map((settings) => settings.agentProfiles),
+              Effect.orElseSucceed(() => []),
+            )
+          : [];
       const userText = withAgentSenderHeader(
         projectComposerContextForProvider({
           text: message.text,
@@ -859,12 +874,11 @@ export const layer: Layer.Layer<
               sender: yield* projectionStore
                 .getThread(message.senderThreadId!)
                 .pipe(Effect.orElseSucceed(() => undefined)),
-              profiles: yield* serverSettings.getSettings.pipe(
-                Effect.map((settings) => settings.agentProfiles),
-                Effect.orElseSucceed(() => []),
-              ),
+              profiles,
             })
-          : undefined,
+          : mayTagBots
+            ? agentMentionNote(parseAgentMentions(message.text, profiles))
+            : undefined,
       );
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(

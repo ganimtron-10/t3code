@@ -2,13 +2,17 @@ import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { findRevealRef } from "./markdownFindContext";
 import {
+  type AgentProfile,
   type EnvironmentId,
+  findAgentProfile,
   type MessageId,
   type ScheduledTaskId,
   type ServerProviderSkill,
   ThreadId,
 } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { agentBotAvatar } from "../settings/agentsSettings.logic";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -421,6 +425,9 @@ function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind:
   );
 }
 
+const selectAgentProfiles = (settings: { agentProfiles: ReadonlyArray<AgentProfile> }) =>
+  settings.agentProfiles;
+
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const { onImageExpand, onFileOpen } = ctx;
@@ -460,7 +467,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
       : null,
   );
-  const senderLabel = senderShell?.title.trim() || "Agent";
+  const agentProfiles = useEnvironmentSettings(ctx.activeThreadEnvironmentId, selectAgentProfiles);
+  const senderProfile = findAgentProfile(agentProfiles, senderShell?.agentProfileId);
+  const senderLabel = senderProfile
+    ? `${agentBotAvatar(senderProfile)} ${senderProfile.name}`
+    : senderShell?.title.trim() || "Agent";
   const resolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;

@@ -2889,7 +2889,6 @@ export default function ChatView(props: ChatViewProps) {
     handleInteractionModeChange,
     handleInteractionModeChangeStable,
     handleRuntimeModeChangeStable,
-    onAgentProfileChangeStable,
     onEnvModeChangeStable,
     onProviderModelSelectStable,
     onStartFromOriginChange,
@@ -3812,13 +3811,7 @@ export default function ChatView(props: ChatViewProps) {
                                 toggleInteractionMode={toggleInteractionModeStable}
                                 handleRuntimeModeChange={handleRuntimeModeChangeStable}
                                 handleInteractionModeChange={handleInteractionModeChangeStable}
-                                {...(isLocalDraftThread && agentProfiles
-                                  ? {
-                                      agentProfiles,
-                                      agentProfileId: draftThread?.agentProfileId ?? null,
-                                      onAgentProfileChange: onAgentProfileChangeStable,
-                                    }
-                                  : {})}
+                                {...(agentProfiles ? { agentProfiles } : {})}
                                 focusComposer={focusComposerStable}
                                 scheduleComposerFocus={scheduleComposerFocusStable}
                                 setThreadError={setThreadError}

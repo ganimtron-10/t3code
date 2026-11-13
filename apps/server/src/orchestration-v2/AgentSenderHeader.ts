@@ -33,6 +33,16 @@ export function agentSenderHeader(input: {
   return `[From ${name} (thread ${sender.id})]`;
 }
 
+/**
+ * The thread's own agent still takes a message that tags bots, so it is told who joined
+ * and that their results arrive here, instead of looking for a teammate it cannot see.
+ */
+export function agentMentionNote(bots: ReadonlyArray<AgentProfile>): string | undefined {
+  if (bots.length === 0) return undefined;
+  const names = bots.map((bot) => `${bot.name} (@${bot.id})`).join(", ");
+  return `[Tagged bots: ${names}. T3 Code already handed this message to each of them as a delegated task under this thread; their results arrive here when they finish. Answer the rest of the message yourself and leave their part to them.]`;
+}
+
 export function withAgentSenderHeader(text: string, header: string | undefined): string {
   return header === undefined ? text : `${header}\n\n${text}`;
 }

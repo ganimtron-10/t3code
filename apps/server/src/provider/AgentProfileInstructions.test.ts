@@ -1,30 +1,38 @@
-import { AgentProfileId, DEFAULT_AGENT_PROFILES } from "@t3tools/contracts";
+import { type AgentProfile } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
-import { resolveAgentInstructions } from "./AgentProfileInstructions.ts";
+import { agentProfileInstructions } from "./AgentProfileInstructions.ts";
 import { splitCodexAdditionalContextValue } from "./CodexDeveloperInstructions.ts";
 
-describe("resolveAgentInstructions", () => {
-  it("renders the profile's identity, role and rules", () => {
-    const text = resolveAgentInstructions(DEFAULT_AGENT_PROFILES, AgentProfileId.make("qa"));
-    assert.isDefined(text);
-    assert.match(text!, /^## Agent identity\n\nYou are QA \(Verifies the change\)\.\n\n/);
-    assert.include(text!, "real entry point");
-  });
+const qa = {
+  id: "qa",
+  name: "QA",
+  avatar: "",
+  role: "Verifies the change",
+  instructions: "Test through the real entry point.",
+  modelSelection: null,
+  runtimeMode: null,
+  interactionMode: null,
+} as unknown as AgentProfile;
 
-  it("returns nothing for threads without a profile or with a deleted one", () => {
-    assert.isUndefined(resolveAgentInstructions(DEFAULT_AGENT_PROFILES, undefined));
-    assert.isUndefined(
-      resolveAgentInstructions(DEFAULT_AGENT_PROFILES, AgentProfileId.make("deleted")),
+describe("agentProfileInstructions", () => {
+  it("renders the profile's identity, role and inline rules when there is no SOUL.md", () => {
+    assert.equal(
+      agentProfileInstructions(qa, null),
+      "## Agent identity\n\nYou are QA (Verifies the change).\n\nTest through the real entry point.",
     );
   });
 
-  it("omits an empty role", () => {
-    const text = resolveAgentInstructions(
-      [{ ...DEFAULT_AGENT_PROFILES[0]!, role: "", instructions: "" }],
-      AgentProfileId.make("chief"),
+  it("uses SOUL.md over the inline rules, and omits an empty role", () => {
+    assert.equal(
+      agentProfileInstructions({ ...qa, role: "" }, "  Be terse.\n"),
+      "## Agent identity\n\nYou are QA.\n\nBe terse.",
     );
-    assert.equal(text, "## Agent identity\n\nYou are Chief.");
+    assert.include(agentProfileInstructions(qa, " \n"), "Test through the real entry point.");
+    assert.equal(
+      agentProfileInstructions({ ...qa, role: "", instructions: "" }, null),
+      "## Agent identity\n\nYou are QA.",
+    );
   });
 });
 

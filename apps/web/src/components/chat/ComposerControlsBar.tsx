@@ -3,7 +3,6 @@ import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
-import { AgentProfileSelector } from "../AgentProfileSelector";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import {
@@ -89,9 +88,6 @@ export function ComposerControlsBar(props: {
   onModelPickerOpenChange: (open: boolean) => void;
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
-  agentProfiles?: ChatComposerProps["agentProfiles"];
-  agentProfileId?: ChatComposerProps["agentProfileId"];
-  onAgentProfileChange?: ChatComposerProps["onAgentProfileChange"];
 }) {
   const {
     environmentId,
@@ -140,9 +136,6 @@ export function ComposerControlsBar(props: {
     onModelPickerOpenChange,
     modelPickerIconClassName,
     getModelDisabledReason,
-    agentProfiles,
-    agentProfileId = null,
-    onAgentProfileChange,
   } = props;
   const accessMatchesDefault = compatibleRuntimeMode === defaultRuntimeMode;
   const {
@@ -275,13 +268,6 @@ export function ComposerControlsBar(props: {
     </ComposerControl>
   ) : (
     <>
-      {agentProfiles && onAgentProfileChange ? (
-        <AgentProfileSelector
-          profiles={agentProfiles}
-          value={agentProfileId}
-          onChange={onAgentProfileChange}
-        />
-      ) : null}
       {composerModelPicker}
 
       <>

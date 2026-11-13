@@ -1,5 +1,4 @@
 import {
-  type AgentProfileId,
   type EnvironmentId,
   type ModelSelection,
   type RuntimeMode,
@@ -52,7 +51,6 @@ interface MultipleModelSendInput {
   readonly promptRef: { current: string };
   readonly runtimeMode: RuntimeMode;
   readonly startFromOrigin: boolean;
-  readonly agentProfileId: AgentProfileId | null;
   readonly resetLocalDispatch: ReturnType<typeof useLocalDispatchState>["resetLocalDispatch"];
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
 }
@@ -73,7 +71,6 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     promptRef,
     runtimeMode,
     startFromOrigin,
-    agentProfileId,
     resetLocalDispatch,
     setThreadError,
   } = input;
@@ -185,7 +182,6 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
                       modelSelection: target.selection,
                       runtimeMode,
                       interactionMode: target.interactionMode,
-                      ...(agentProfileId === null ? {} : { agentProfileId }),
                       branch,
                       worktreePath: null,
                       createdAt: createdAt,

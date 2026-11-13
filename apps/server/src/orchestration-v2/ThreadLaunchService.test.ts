@@ -590,12 +590,17 @@ it.effect("gives a delegated child the requested team profile and nothing otherw
         creationSource: "mcp",
       });
     }
-    const children = yield* Effect.forEach(
-      (yield* threads.getThreadProjection(chief.threadId)).subagents,
-      (task) => threads.getThreadProjection(task.childThreadId!),
+    const tasks = (yield* threads.getThreadProjection(chief.threadId)).subagents;
+    const children = yield* Effect.forEach(tasks, (task) =>
+      threads.getThreadProjection(task.childThreadId!),
     );
     const byTask = new Map(children.map((child) => [child.thread.title, child.thread]));
     assert.equal(byTask.get("Task for qa")?.agentProfileId, "qa");
+    // The parent's task record names the bot too, so the header can list it after it settles.
+    assert.deepEqual(
+      tasks.map((task) => task.agentProfileId ?? null).toSorted(),
+      ["qa", null].toSorted(),
+    );
     assert.notProperty(byTask.get("Task for plain") ?? {}, "agentProfileId");
     assert.equal(byTask.size, 2);
   }).pipe(Effect.provide(harness.layer));

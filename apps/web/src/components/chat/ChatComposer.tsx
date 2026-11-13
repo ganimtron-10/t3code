@@ -36,7 +36,6 @@ import type {
   ServerProvider,
   ThreadId,
   AgentProfile,
-  AgentProfileId,
 } from "@t3tools/contracts";
 import {
   EnvironmentRequestInvalidError,
@@ -504,8 +503,6 @@ export interface ChatComposerProps {
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   /** Non-empty only while the thread is still a draft, before the provider sees it. */
   agentProfiles?: ReadonlyArray<AgentProfile>;
-  agentProfileId?: AgentProfileId | null;
-  onAgentProfileChange?: (profile: AgentProfile | null) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -516,6 +513,7 @@ export interface ChatComposerProps {
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
+const EMPTY_AGENT_PROFILES: ReadonlyArray<AgentProfile> = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -608,8 +606,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     handleRuntimeModeChange,
     handleInteractionModeChange,
     agentProfiles,
-    agentProfileId = null,
-    onAgentProfileChange,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -746,6 +742,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentId,
     cwd: gitCwd ?? undefined,
     projectId: activeProjectId ?? undefined,
+    agentProfiles,
     expandImage: (imageId: string) => {
       const preview = buildExpandedImagePreview(composerImages, imageId);
       if (preview) onExpandImage(preview);
@@ -1179,6 +1176,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     showSkillsInSlashMenu: settings.showSkillsInSlashMenu,
     workspaceSkillsScanning,
     questionAttachmentTarget,
+    agentProfiles: agentProfiles ?? EMPTY_AGENT_PROFILES,
   });
 
   const composerMenuOpen = Boolean(composerTrigger);
@@ -2070,6 +2068,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return;
     }
+    if (item.type === "agent") {
+      if (trigger.kind !== "path") return;
+      const replacement = `@${item.profile.id} `;
+      const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+        snapshot.value,
+        trigger.rangeEnd,
+        replacement,
+      );
+      const applied = applyPromptReplacement(trigger.rangeStart, replacementRangeEnd, replacement, {
+        expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd),
+      });
+      if (applied) setComposerHighlightedItemId(null);
+      return;
+    }
     if (item.type === "environment") {
       if (trigger.kind !== "path") return;
       const record = environmentContextRecord(item.environmentId, item.label);
@@ -2480,9 +2492,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onModelPickerOpenChange={setIsComposerModelPickerOpen}
       modelPickerIconClassName={composerProviderState.modelPickerIconClassName}
       getModelDisabledReason={getModelDisabledReason}
-      {...(agentProfiles && agentProfiles.length > 0 && onAgentProfileChange
-        ? { agentProfiles, agentProfileId, onAgentProfileChange }
-        : {})}
     />
   );
   // An open question owns the space above the composer. Only a machine problem,

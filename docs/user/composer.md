@@ -361,6 +361,20 @@ them back.
 On mobile, tap a chip to inspect its content. File references open the current file; attached
 files show the copy that was attached to the message.
 
+## Bring in a bot
+
+Bots are agents you set up once in **Settings > Agents**: a name, a handle, an avatar, a role, an
+optional model and modes, and a `SOUL.md` with its persona and rules. The file lives at
+`agents/<handle>/SOUL.md` in the T3 home folder, and edits made there apply on the bot's next turn.
+No bots exist until you create one.
+
+Type `@` in any thread to pick a bot next to files and threads, or type `@handle` yourself. When
+you send the message, each tagged bot joins as a task under the thread: the first tag starts the
+bot's own thread with your message, and later tags in the same thread go to that bot's existing
+thread. When the bot finishes, its result comes back to this thread like any delegated task. The
+thread's own agent still answers your message as usual. The thread header shows the bots taking
+part; select one to open its thread.
+
 ## Attached files
 
 Select a file chip in your draft or a sent message to preview it. Code and JSON use syntax
