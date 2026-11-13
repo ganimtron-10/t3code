@@ -26,6 +26,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  | "/settings/agents"
   | "/settings/threads"
   | "/settings/browser"
   | "/settings/devices"
@@ -96,6 +97,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
+  "/settings/agents": "Agents",
   "/settings/threads": "Threads",
   "/settings/browser": "Browser",
   "/settings/devices": "Devices",
@@ -133,6 +135,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Agents",
     paths: [
       "/settings/providers",
+      "/settings/agents",
       "/settings/threads",
       "/settings/browser",
       "/settings/devices",
@@ -957,6 +960,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow disable enable open drive preview tools sessions project override"],
   },
   {
+    id: "agent-bots",
+    title: "Bots",
+    to: "/settings/agents",
+    searchTerms: ["agents bots custom persona soul soul.md @tag mention handle avatar role team"],
+  },
+  {
     id: "device-sources",
     title: "Device sources",
     to: "/settings/devices",
@@ -1316,6 +1325,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/snap-shot": null,
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/agents": null,
   "/settings/threads": null,
   "/settings/browser": null,
   "/settings/devices": null,
