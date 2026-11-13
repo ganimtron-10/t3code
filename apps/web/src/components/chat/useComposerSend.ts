@@ -363,7 +363,6 @@ export function useComposerSend(input: ComposerSendInput) {
     (store) => store.setEnvironmentContexts,
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
-  const draftAgentProfileId = isLocalDraftThread ? (draftThread?.agentProfileId ?? null) : null;
   const sendToMultipleModels = useMultipleModelSend({
     environmentId,
     routeThreadKey,
@@ -374,7 +373,6 @@ export function useComposerSend(input: ComposerSendInput) {
     promptRef,
     runtimeMode,
     startFromOrigin,
-    agentProfileId: draftAgentProfileId,
     resetLocalDispatch,
     setThreadError,
   });
@@ -1339,9 +1337,6 @@ export function useComposerSend(input: ComposerSendInput) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: sendInteractionMode,
-                      ...(draftAgentProfileId === null
-                        ? {}
-                        : { agentProfileId: draftAgentProfileId }),
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,

@@ -4,7 +4,6 @@ import type { Dispatch } from "react";
 import type { ComposerThreadTarget, DraftSessionState } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import {
-  type AgentProfile,
   type EnvironmentId,
   type ModelSelection,
   ProviderInstanceId,
@@ -215,18 +214,6 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);
-  // A profile's model and modes are starting defaults; the user can still change them.
-  const onAgentProfileChange = (profile: AgentProfile | null) => {
-    setDraftThreadContext(composerDraftTarget, { agentProfileId: profile?.id ?? null });
-    if (profile?.modelSelection) {
-      onProviderModelSelect(profile.modelSelection.instanceId, profile.modelSelection.model, {
-        focusComposer: false,
-      });
-    }
-    if (profile?.runtimeMode) handleRuntimeModeChange(profile.runtimeMode);
-    if (profile?.interactionMode) handleInteractionModeChange(profile.interactionMode);
-  };
-  const onAgentProfileChangeStable = useStableCallback(onAgentProfileChange);
   const onEnvModeChange = (mode: DraftThreadEnvMode) => {
     if (multipleModelSelections !== null) return;
     if (canOverrideServerThreadEnvMode) {
@@ -271,7 +258,6 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     handleInteractionModeChange,
     handleInteractionModeChangeStable,
     handleRuntimeModeChangeStable,
-    onAgentProfileChangeStable,
     onEnvModeChangeStable,
     onProviderModelSelectStable,
     onStartFromOriginChange,

@@ -5,6 +5,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import type {
+  AgentProfile,
   EnvironmentId,
   ProjectId,
   ProviderDriverKind,
@@ -53,6 +54,26 @@ const COMPOSER_PULL_REQUEST_RESULT_LIMIT = 12;
 const EMPTY_PULL_REQUEST_LIST_TARGETS: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>> =
   [];
 
+/** Bots whose handle or name contains the query; a bare `@` lists them all. */
+function matchComposerAgentItems(
+  profiles: ReadonlyArray<AgentProfile>,
+  query: string,
+): ComposerCommandItem[] {
+  const needle = query.trim().toLowerCase();
+  return profiles
+    .filter(
+      (profile) =>
+        needle === "" || profile.id.includes(needle) || profile.name.toLowerCase().includes(needle),
+    )
+    .map((profile) => ({
+      id: `agent:${profile.id}`,
+      type: "agent" as const,
+      profile,
+      label: `@${profile.id}`,
+      description: profile.role === "" ? profile.name : `${profile.name} · ${profile.role}`,
+    }));
+}
+
 /** Builds the @, /, $ and # suggestion lists, running the searches each trigger needs. */
 export function useComposerMenuItems({
   composerTrigger,
@@ -74,6 +95,7 @@ export function useComposerMenuItems({
   showSkillsInSlashMenu,
   workspaceSkillsScanning,
   questionAttachmentTarget,
+  agentProfiles,
 }: {
   readonly composerTrigger: ComposerTrigger | null;
   readonly environmentId: EnvironmentId;
@@ -94,6 +116,7 @@ export function useComposerMenuItems({
   readonly showSkillsInSlashMenu: boolean;
   readonly workspaceSkillsScanning: boolean;
   readonly questionAttachmentTarget: DraftId | null;
+  readonly agentProfiles: ReadonlyArray<AgentProfile>;
 }) {
   // Thread mentions rank by recency as of when the composer mounted.
   const [now] = useState(() => Date.now());
@@ -190,6 +213,10 @@ export function useComposerMenuItems({
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
+        // An answer to an agent's question cannot bring bots in.
+        ...(questionAttachmentTarget === null
+          ? matchComposerAgentItems(agentProfiles, composerTrigger.query)
+          : []),
         ...matchComposerThreadItems({
           shells: environmentThreadShells,
           environmentId,
