@@ -118,13 +118,16 @@ export function agentBotDraftErrors(
       : name.length > 64
         ? { name: "Use at most 64 characters." }
         : {}),
-    ...(!isAgentBotId(id)
-      ? {
-          id: "Use lowercase letters, digits and single hyphens, starting and ending with a letter or digit.",
-        }
-      : draft.savedId === null && profiles.some((profile) => profile.id === id)
-        ? { id: `@${id} is already taken.` }
-        : {}),
+    // A saved handle is fixed, even one saved by hand before handles had to be slugs.
+    ...(draft.savedId !== null
+      ? {}
+      : !isAgentBotId(id)
+        ? {
+            id: "Use lowercase letters, digits and single hyphens, starting and ending with a letter or digit.",
+          }
+        : profiles.some((profile) => profile.id === id)
+          ? { id: `@${id} is already taken.` }
+          : {}),
     ...(draft.soul.length > AGENT_SOUL_MAX_LENGTH
       ? { soul: `Keep SOUL.md under ${AGENT_SOUL_MAX_LENGTH.toLocaleString()} characters.` }
       : {}),
@@ -135,14 +138,14 @@ export function hasAgentBotDraftErrors(errors: AgentBotDraftErrors): boolean {
   return Object.keys(errors).length > 0;
 }
 
-/** The settings entry keeps metadata only; the persona lives in SOUL.md. */
+/** The settings entry keeps metadata only; the persona lives in SOUL.md when the id can have one. */
 export function agentProfileFromDraft(draft: AgentBotDraft): AgentProfile {
   return {
     id: AgentProfileId.make(draft.id.trim()),
     name: draft.name.trim(),
     avatar: draft.avatar.trim(),
     role: draft.role.trim(),
-    instructions: "",
+    instructions: isAgentBotId(draft.id.trim()) ? "" : draft.soul,
     modelSelection: draft.modelSelection,
     runtimeMode: draft.runtimeMode,
     interactionMode: draft.interactionMode,

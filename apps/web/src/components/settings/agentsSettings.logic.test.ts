@@ -76,6 +76,12 @@ describe("bot drafts", () => {
     expect(agentBotDraftErrors(draft, [])).toEqual({});
     expect(agentBotDraftErrors(draft, [reviewer]).id).toBe("@reviewer is already taken.");
     expect(agentBotDraftErrors(agentBotDraftFromProfile(reviewer, null), [reviewer])).toEqual({});
+    // A bot saved by hand with a non-slug id still edits; its rules stay inline.
+    const legacy = { ...reviewer, id: AgentProfileId.make("Old Bot") };
+    expect(agentBotDraftErrors(agentBotDraftFromProfile(legacy, null), [legacy])).toEqual({});
+    expect(agentProfileFromDraft(agentBotDraftFromProfile(legacy, null)).instructions).toBe(
+      "Inline rules.",
+    );
     for (const id of ["../x", "Up", "a/b", "-a", "a".repeat(65)]) {
       expect(agentBotDraftErrors({ ...draft, id }, []).id, id).toBeDefined();
     }

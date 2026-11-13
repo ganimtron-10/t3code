@@ -42,13 +42,10 @@ const profile = (id: string, fields: Partial<AgentProfile> = {}) =>
   }) as AgentProfile;
 
 const member = (id: string, profileId: string, active = false): AgentMentionMember => ({
-  thread: {
-    ...parent,
-    id: ThreadId.make(id),
-    agentProfileId: AgentProfileId.make(profileId),
-    lineage: { parentThreadId: parentId, relationshipToParent: "subagent", rootThreadId: parentId },
-  } as OrchestrationV2AppThread,
+  profileId,
+  threadId: ThreadId.make(id),
   active,
+  closed: false,
 });
 
 const run = { id: RunId.make("run:1"), rootNodeId: NodeId.make("node:root") };
@@ -98,7 +95,11 @@ describe("planAgentMentions", () => {
       run,
       message: message("@qa again please"),
       profiles: [profile("qa")],
-      members: [member("thread:qa-old", "qa"), member("thread:qa", "qa")],
+      members: [
+        member("thread:qa-old", "qa"),
+        member("thread:qa", "qa"),
+        { ...member("thread:qa-closed", "qa"), closed: true },
+      ],
     });
     assert.lengthOf(plan.commands, 1);
     assert.deepInclude(plan.commands[0] as Record<string, unknown>, {
@@ -112,7 +113,14 @@ describe("planAgentMentions", () => {
 
   it("keeps the team guardrails: nested threads and full teams add no new members", () => {
     const nested = planAgentMentions({
-      parent: member("thread:child", "dev").thread,
+      parent: {
+        ...parent,
+        lineage: {
+          parentThreadId: parentId,
+          relationshipToParent: "subagent",
+          rootThreadId: parentId,
+        },
+      } as OrchestrationV2AppThread,
       run,
       message: message("@qa"),
       profiles: [profile("qa")],
@@ -151,7 +159,29 @@ describe("planAgentMentions", () => {
 });
 
 describe("AgentMentionReactor", () => {
-  const handleRun = (creationSource: string, events = 1) => {
+  const typed = (id: string, creationSource: string) => ({
+    id: MessageId.make(id),
+    threadId: parentId,
+    runId: run.id,
+    role: "user",
+    createdBy: "user",
+    creationSource,
+    text: "@qa check this",
+  });
+  const activeRun = {
+    id: run.id,
+    status: "running",
+    rootNodeId: run.rootNodeId,
+    userMessageId: MessageId.make("message:start"),
+  };
+  const runEvent = { type: "run.updated", threadId: parentId, payload: activeRun };
+  const messageEvent = (message: ReturnType<typeof typed>) => ({
+    type: "message.updated",
+    threadId: parentId,
+    payload: message,
+  });
+
+  const handleEvents = (messages: ReadonlyArray<ReturnType<typeof typed>>, events: unknown[]) => {
     const dispatched: Array<unknown> = [];
     const layer = AgentMentionReactor.layer.pipe(
       Layer.provide(
@@ -170,15 +200,8 @@ describe("AgentMentionReactor", () => {
             Effect.succeed({
               thread: parent,
               subagents: [],
-              messages: [
-                {
-                  id: MessageId.make("message:1"),
-                  role: "user",
-                  createdBy: "user",
-                  creationSource,
-                  text: "@qa check this",
-                },
-              ],
+              runs: [activeRun],
+              messages,
             } as never),
         }),
       ),
@@ -188,25 +211,18 @@ describe("AgentMentionReactor", () => {
     );
     return Effect.gen(function* () {
       const reactor = yield* AgentMentionReactor.AgentMentionReactor;
-      for (let index = 0; index < events; index += 1) {
-        yield* reactor.handle({
-          type: "run.updated",
-          threadId: parentId,
-          payload: {
-            id: run.id,
-            status: "running",
-            rootNodeId: run.rootNodeId,
-            userMessageId: MessageId.make("message:1"),
-          },
-        } as never);
-      }
+      for (const event of events) yield* reactor.handle(event as never);
       return dispatched;
     }).pipe(Effect.provide(layer));
   };
 
   it.effect("brings in bots a person tagged, once per run", () =>
     Effect.gen(function* () {
-      const dispatched = yield* handleRun("web", 3);
+      const start = typed("message:start", "web");
+      const dispatched = yield* handleEvents(
+        [start],
+        [messageEvent(start), runEvent, runEvent, runEvent],
+      );
       assert.lengthOf(dispatched, 1);
       assert.deepInclude(dispatched[0] as Record<string, unknown>, {
         type: "delegated_task.request",
@@ -215,10 +231,23 @@ describe("AgentMentionReactor", () => {
     }),
   );
 
+  it.effect("brings in bots tagged in a message steered into the running turn", () =>
+    Effect.gen(function* () {
+      const steer = typed("message:steer", "mobile");
+      const dispatched = yield* handleEvents([steer], [messageEvent(steer), messageEvent(steer)]);
+      assert.lengthOf(dispatched, 1);
+      assert.deepInclude(dispatched[0] as Record<string, unknown>, {
+        commandId: "server:agent-mention:message:steer:qa",
+      });
+    }),
+  );
+
   it.effect("ignores tags in bot tasks and agent messages, so bots never fan out again", () =>
     Effect.gen(function* () {
-      assert.lengthOf(yield* handleRun("server"), 0);
-      assert.lengthOf(yield* handleRun("mcp"), 0);
+      for (const source of ["server", "mcp"]) {
+        const start = typed("message:start", source);
+        assert.lengthOf(yield* handleEvents([start], [messageEvent(start), runEvent]), 0);
+      }
     }),
   );
 });

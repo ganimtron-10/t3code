@@ -28,6 +28,7 @@ describe("agentProfileInstructions", () => {
       agentProfileInstructions({ ...qa, role: "" }, "  Be terse.\n"),
       "## Agent identity\n\nYou are QA.\n\nBe terse.",
     );
+    assert.include(agentProfileInstructions(qa, " \n"), "Test through the real entry point.");
     assert.equal(
       agentProfileInstructions({ ...qa, role: "", instructions: "" }, null),
       "## Agent identity\n\nYou are QA.",

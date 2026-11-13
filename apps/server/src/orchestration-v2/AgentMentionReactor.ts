@@ -9,6 +9,7 @@ import {
   type OrchestrationV2Run,
   parseAgentMentions,
   type RunId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -24,11 +25,25 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 const SETTLED_TASK_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
-const HANDLED_RUNS_LIMIT = 500;
+const HANDLED_LIMIT = 500;
 
+/** Only what a person typed: bot tasks and agent messages never fan out again. */
+function isTypedMessage(message: OrchestrationV2ConversationMessage): boolean {
+  return (
+    message.role === "user" &&
+    message.createdBy === "user" &&
+    (message.creationSource === "web" || message.creationSource === "mobile") &&
+    message.text.includes("@")
+  );
+}
+
+/** A bot's member thread under the tagged thread, from the thread's task records. */
 export interface AgentMentionMember {
-  readonly thread: OrchestrationV2AppThread;
+  readonly profileId: string;
+  readonly threadId: ThreadId;
   readonly active: boolean;
+  /** Archived or deleted: a new tag starts a fresh member instead. */
+  readonly closed: boolean;
 }
 
 export interface AgentMentionPlan {
@@ -59,24 +74,17 @@ export function planAgentMentions(input: {
   const commands: Array<OrchestrationV2Command> = [];
   const skipped: Array<{ profileId: string; reason: string }> = [];
   if (mentioned.length === 0 || run.rootNodeId === null) return { commands, skipped };
-  let activeMembers = input.members.filter(
-    (member) => member.active && member.thread.agentProfileId !== undefined,
-  ).length;
+  let activeMembers = input.members.filter((member) => member.active).length;
   for (const profile of mentioned) {
     const key = `${message.id}:${profile.id}`;
     const existing = input.members
-      .filter(
-        (member) =>
-          member.thread.agentProfileId === profile.id &&
-          member.thread.archivedAt === null &&
-          member.thread.deletedAt === null,
-      )
+      .filter((member) => member.profileId === profile.id && !member.closed)
       .at(-1);
     if (existing !== undefined) {
       commands.push({
         type: "message.dispatch",
         commandId: CommandId.make(`server:agent-mention:${key}`),
-        threadId: existing.thread.id,
+        threadId: existing.threadId,
         messageId: MessageId.make(`message:agent-mention:${key}`),
         senderThreadId: parent.id,
         text: mentionTask(parent, message.text),
@@ -130,67 +138,107 @@ const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  // A run updates many times; this keeps the message read to once per run. Command ids make
-  // a repeat after a restart harmless.
+  // Run and message events repeat; these keep the reads to once per run and message. Command
+  // ids make a repeat after a restart harmless.
   const handledRuns = new Set<RunId>();
+  const handledMessages = new Set<MessageId>();
+  const remember = <A>(set: Set<A>, value: A) => {
+    set.add(value);
+    if (set.size > HANDLED_LIMIT) set.delete(set.values().next().value!);
+  };
+
+  const bringIn = Effect.fnUntraced(function* (
+    threadId: ThreadId,
+    run: Pick<OrchestrationV2Run, "id" | "rootNodeId">,
+    message: Pick<OrchestrationV2ConversationMessage, "id" | "text">,
+    profiles: ReadonlyArray<AgentProfile>,
+  ) {
+    remember(handledMessages, message.id);
+    const mentioned = new Set(parseAgentMentions(message.text, profiles).map((bot) => bot.id));
+    if (mentioned.size === 0) return;
+    const { thread, subagents } = yield* projections.getThreadRecords(threadId, ["subagents"]);
+    const members: Array<AgentMentionMember> = [];
+    for (const task of subagents) {
+      if (
+        task.origin !== "app_owned" ||
+        task.childThreadId === null ||
+        task.agentProfileId === undefined
+      ) {
+        continue;
+      }
+      // Only a tagged bot's own thread is read; a purged one is treated as closed.
+      const child = mentioned.has(task.agentProfileId)
+        ? yield* projections
+            .getThread(task.childThreadId)
+            .pipe(Effect.orElseSucceed(() => undefined))
+        : undefined;
+      members.push({
+        profileId: task.agentProfileId,
+        threadId: task.childThreadId,
+        active: !SETTLED_TASK_STATUSES.has(task.status),
+        closed:
+          mentioned.has(task.agentProfileId) &&
+          (child === undefined || child.archivedAt !== null || child.deletedAt !== null),
+      });
+    }
+    const plan = planAgentMentions({ parent: thread, run, message, profiles, members });
+    for (const skipped of plan.skipped) {
+      yield* Effect.logWarning("A tagged bot could not join the thread.", {
+        threadId: thread.id,
+        ...skipped,
+      });
+    }
+    for (const command of plan.commands) {
+      yield* engine.dispatch(command).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Bringing in a tagged bot failed.", {
+            threadId: thread.id,
+            commandId: command.commandId,
+            cause,
+          }),
+        ),
+      );
+    }
+  });
 
   // Runs for every domain event; most return on the first checks.
   const handle: AgentMentionReactor["Service"]["handle"] = Effect.fnUntraced(
     function* (event) {
+      // A message steered into a running turn joins that run without starting one.
+      if (event.type === "message.updated") {
+        const message = event.payload;
+        if (!isTypedMessage(message) || message.runId === null || handledMessages.has(message.id)) {
+          return;
+        }
+        const profiles = (yield* serverSettings.getSettings).agentProfiles;
+        if (profiles.length === 0) return;
+        const run = (yield* projections.getThreadRecords(event.threadId, ["runs"], {
+          runIds: [message.runId],
+        })).runs.find((candidate) => candidate.id === message.runId);
+        // A queued message waits for its run to start, below.
+        if (run === undefined || !isActiveRun(run) || run.rootNodeId === null) return;
+        yield* bringIn(event.threadId, run, message, profiles);
+        return;
+      }
       if (event.type !== "run.created" && event.type !== "run.updated") return;
       const run = event.payload;
-      if (!isActiveRun(run) || run.rootNodeId === null || handledRuns.has(run.id)) return;
-      const profiles = (yield* serverSettings.getSettings).agentProfiles;
-      if (profiles.length === 0) return;
-      handledRuns.add(run.id);
-      if (handledRuns.size > HANDLED_RUNS_LIMIT) {
-        handledRuns.delete(handledRuns.values().next().value!);
-      }
-      const { thread, messages, subagents } = yield* projections.getThreadRecords(
-        event.threadId,
-        ["messages", "subagents"],
-        { messageIds: [run.userMessageId] },
-      );
-      const message = messages.find((candidate) => candidate.id === run.userMessageId);
-      // Only what a person typed: bot tasks and agent messages never fan out again.
       if (
-        message === undefined ||
-        message.createdBy !== "user" ||
-        (message.creationSource !== "web" && message.creationSource !== "mobile")
+        !isActiveRun(run) ||
+        run.rootNodeId === null ||
+        handledRuns.has(run.id) ||
+        handledMessages.has(run.userMessageId)
       ) {
         return;
       }
-      if (parseAgentMentions(message.text, profiles).length === 0) return;
-      const members: Array<AgentMentionMember> = [];
-      for (const task of subagents) {
-        if (
-          task.origin !== "app_owned" ||
-          task.childThreadId === null ||
-          task.agentProfileId === undefined
-        ) {
-          continue;
-        }
-        const child = yield* projections.getThread(task.childThreadId);
-        members.push({ thread: child, active: !SETTLED_TASK_STATUSES.has(task.status) });
-      }
-      const plan = planAgentMentions({ parent: thread, run, message, profiles, members });
-      for (const skipped of plan.skipped) {
-        yield* Effect.logWarning("A tagged bot could not join the thread.", {
-          threadId: thread.id,
-          ...skipped,
-        });
-      }
-      for (const command of plan.commands) {
-        yield* engine.dispatch(command).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Bringing in a tagged bot failed.", {
-              threadId: thread.id,
-              commandId: command.commandId,
-              cause,
-            }),
-          ),
-        );
-      }
+      const profiles = (yield* serverSettings.getSettings).agentProfiles;
+      if (profiles.length === 0) return;
+      const { messages } = yield* projections.getThreadRecords(event.threadId, ["messages"], {
+        messageIds: [run.userMessageId],
+      });
+      remember(handledRuns, run.id);
+      const message = messages.find((candidate) => candidate.id === run.userMessageId);
+      if (message === undefined || !isTypedMessage(message)) return;
+      yield* bringIn(event.threadId, run, message, profiles);
     },
     (effect, event) =>
       effect.pipe(

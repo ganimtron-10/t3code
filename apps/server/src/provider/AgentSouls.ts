@@ -13,7 +13,7 @@ const AGENT_SOUL_FILE_NAME = "SOUL.md";
 export class AgentSouls extends Context.Service<
   AgentSouls,
   {
-    /** Null when the file is missing, so the caller can fall back to the inline instructions. */
+    /** Null when the file is missing or the id cannot have one, so the caller falls back to the inline instructions. */
     readonly read: (id: string) => Effect.Effect<string | null, AgentSoulError>;
     readonly write: (id: string, content: string) => Effect.Effect<void, AgentSoulError>;
     /** Removes the bot's whole folder; a missing folder is not an error. */
@@ -34,6 +34,8 @@ const make = Effect.gen(function* () {
       : Effect.fail(new AgentSoulError({ id, operation }));
 
   const read = Effect.fn("AgentSouls.read")(function* (id: string) {
+    // A profile saved by hand with a non-slug id can have no file; it keeps its inline rules.
+    if (!isAgentBotId(id)) return null;
     const filePath = path.join(yield* botDir(id, "read"), AGENT_SOUL_FILE_NAME);
     return yield* fs.readFileString(filePath).pipe(
       Effect.catchTags({

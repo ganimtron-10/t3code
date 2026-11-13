@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type AgentProfile,
   type EnvironmentId,
+  isAgentBotId,
   type ProviderInteractionMode,
   type RuntimeMode,
 } from "@t3tools/contracts";
@@ -126,6 +127,11 @@ function AgentsEnvironmentSettings({ environmentId }: { readonly environmentId: 
     profile: AgentProfile,
     toDraft: (soul: string | null) => AgentBotDraft,
   ) => {
+    // A profile saved by hand with a non-slug id has no SOUL.md; it edits its inline rules.
+    if (!isAgentBotId(profile.id)) {
+      setEditor(toDraft(null));
+      return;
+    }
     const result = await readSoul({ environmentId, input: { id: profile.id } });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
@@ -151,6 +157,7 @@ function AgentsEnvironmentSettings({ environmentId }: { readonly environmentId: 
       }
       return;
     }
+    if (!isAgentBotId(profile.id)) return;
     const removed = await removeSoul({ environmentId, input: { id: profile.id } });
     if (removed._tag === "Failure" && !isAtomCommandInterrupted(removed)) {
       reportFailure(
@@ -348,11 +355,10 @@ function AgentBotEditorDialog({
     const profile = agentProfileFromDraft(draft);
     setSaving(true);
     // SOUL.md first: a bot listed in settings without its file would run on stale rules.
-    const wrote = await writeSoul({
-      environmentId,
-      input: { id: profile.id, content: draft.soul },
-    });
-    if (wrote._tag === "Failure") {
+    const wrote = isAgentBotId(profile.id)
+      ? await writeSoul({ environmentId, input: { id: profile.id, content: draft.soul } })
+      : null;
+    if (wrote?._tag === "Failure") {
       setSaving(false);
       if (!isAtomCommandInterrupted(wrote)) {
         reportFailure("Could not save SOUL.md", squashAtomCommandFailure(wrote));

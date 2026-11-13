@@ -47,7 +47,7 @@ it.layer(layer)("AgentSouls", (it) => {
       const { baseDir } = yield* ServerConfig.ServerConfig;
       for (const id of ["../escape", "..", "a/b", "/etc/passwd", "Reviewer", "a.b", ""]) {
         assert.isTrue(Exit.isFailure(yield* Effect.exit(souls.write(id, "x"))), id);
-        assert.isTrue(Exit.isFailure(yield* Effect.exit(souls.read(id))), id);
+        assert.isNull(yield* souls.read(id), id);
         assert.isTrue(Exit.isFailure(yield* Effect.exit(souls.remove(id))), id);
       }
       assert.isFalse(yield* fs.exists(path.join(baseDir, "escape")));
