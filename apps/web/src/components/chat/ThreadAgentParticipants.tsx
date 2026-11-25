@@ -1,4 +1,5 @@
 import type { AgentProfile, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useThreadProjection } from "../../state/entities";
@@ -16,6 +17,7 @@ export function ThreadAgentParticipants({
   readonly threadRef: ScopedThreadRef;
   readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
+  const gt = useGT();
   const projection = useThreadProjection(threadRef)?.projection ?? null;
   const profiles = useEnvironmentSettings(threadRef.environmentId, selectAgentProfiles);
   const members: Array<{ profileId: string; threadId: ThreadId }> = [];
@@ -38,14 +40,14 @@ export function ThreadAgentParticipants({
   }
   if (participants.length === 0) return null;
   return (
-    <div className="flex shrink-0 items-center gap-1" aria-label="Bots in this conversation">
+    <div className="flex shrink-0 items-center gap-1" aria-label={gt("Bots in this conversation")}>
       {participants.map(({ profile, threadId }) => (
         <Tooltip key={profile.id}>
           <TooltipTrigger
             render={
               <button
                 type="button"
-                aria-label={`Open ${profile.name}'s thread`}
+                aria-label={gt("Open {name}’s thread", { name: profile.name })}
                 disabled={threadId === threadRef.threadId}
                 onClick={() => onOpenThread(threadId)}
                 className="inline-flex max-w-32 cursor-pointer items-center gap-1 rounded-full py-0.5 pe-1.5 ps-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
