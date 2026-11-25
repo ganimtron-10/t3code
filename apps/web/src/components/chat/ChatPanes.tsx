@@ -1,6 +1,7 @@
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import { T, useGT } from "gt-react";
 import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
 import {
   memo,
@@ -360,6 +361,7 @@ const PaneLeaf = memo(function PaneLeaf({
   /** A new thread being written here; it shows instead of the active tab. */
   draftView: ReactNode | undefined;
 }) {
+  const gt = useGT();
   const { threadRef } = leaf;
   const tabs = leafThreads(leaf);
   const follow = useFollowThread();
@@ -494,7 +496,7 @@ const PaneLeaf = memo(function PaneLeaf({
         ) : (
           <div
             role="tablist"
-            aria-label="Threads in this pane"
+            aria-label={gt("Threads in this pane")}
             className="flex h-full min-w-0 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onWheel={(event) => {
               if (event.deltaX === 0) event.currentTarget.scrollLeft += event.deltaY;
@@ -521,7 +523,7 @@ const PaneLeaf = memo(function PaneLeaf({
                 data-chat-pane-tab="draft"
               >
                 <PlusIcon aria-hidden className="size-3" />
-                New thread
+                <T>New thread</T>
               </span>
             ) : null}
           </div>
@@ -530,8 +532,8 @@ const PaneLeaf = memo(function PaneLeaf({
           <Button
             variant="ghost"
             size="icon-micro"
-            aria-label="New tab in this pane"
-            title="New tab"
+            aria-label={gt("New tab in this pane")}
+            title={gt("New tab")}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={newTab}
           >
@@ -552,8 +554,12 @@ const PaneLeaf = memo(function PaneLeaf({
           <Button
             variant="ghost"
             size="icon-micro"
-            aria-label={tabs.length > 1 ? "Close pane and its tabs" : `Close pane for ${title}`}
-            title={tabs.length > 1 ? "Close pane and its tabs" : "Close pane"}
+            aria-label={
+              tabs.length > 1
+                ? gt("Close pane and its tabs")
+                : gt("Close pane for {title}", { title })
+            }
+            title={tabs.length > 1 ? gt("Close pane and its tabs") : gt("Close pane")}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={close}
           >
@@ -577,7 +583,7 @@ const PaneLeaf = memo(function PaneLeaf({
         </BackgroundThreadContext>
       ) : (
         <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
-          Loading thread…
+          <T>Loading thread…</T>
         </div>
       )}
       <DropHighlight paneId={leaf.id} />
@@ -604,6 +610,7 @@ function PaneTab({
   onToggle: () => void;
   onClose: () => void;
 }) {
+  const gt = useGT();
   const shell = useThreadShell(threadRef);
   const title = shell?.title ?? "Thread";
   const deleted = shell?.deletedAt != null;
@@ -638,8 +645,8 @@ function PaneTab({
         <Button
           variant="ghost"
           size="icon-micro"
-          aria-label={`Close tab ${title}`}
-          title="Close tab"
+          aria-label={gt("Close tab {title}", { title })}
+          title={gt("Close tab")}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={onClose}
         >
@@ -710,6 +717,7 @@ function ResizeHandle({
   onCommit: (ratio: number) => void;
   onEqualize: () => void;
 }) {
+  const gt = useGT();
   const ratioRef = useRef<number | null>(null);
   const horizontal = direction === "horizontal";
   const ratioFromPointer = (event: ReactPointerEvent<HTMLElement>) => {
@@ -749,7 +757,7 @@ function ResizeHandle({
       role="separator"
       aria-orientation={horizontal ? "vertical" : "horizontal"}
       data-chat-pane-resize
-      aria-label="Resize panes"
+      aria-label={gt("Resize panes")}
       aria-valuemin={15}
       aria-valuemax={85}
       aria-valuenow={Math.round(ratio * 100)}
